@@ -175,7 +175,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
         
         // Setup connection factory
         HttpHost host = new HttpHost(
-            listenerContext.getHostname(), 
+            listenerContext.getBindAddress(),
             listenerContext.getPort(), 
             scheme.getName());
         connFactory = initConnFactoryBuilder(transportIn, host).build(params);
@@ -352,7 +352,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
                 if (log.isInfoEnabled()) {
                     InetSocketAddress address = (InetSocketAddress) endpoint.getAddress();
                     if (!address.isUnresolved()) {
-                        log.info(name + " started on " + address.getHostName() + ":" + address.getPort());
+                        log.info(name + " started on " + address.toString() + ":" + address.getPort());
                     } else {
                         log.info(name + " started on " + address);
                     }
@@ -398,7 +398,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
                 if (log.isInfoEnabled()) {
                     InetSocketAddress address = (InetSocketAddress) endpoint.getAddress();
                     if (!address.isUnresolved()) {
-                        log.info(name + " started on " + address.getHostName() + ":" + address.getPort());
+                        log.info(name + " started on " + address.getAddress().getHostAddress() + ":" + address.getPort());
                     } else {
                         log.info(name + " started on " + address);
                     }
@@ -498,7 +498,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
         
         // Rebuild connection factory
         HttpHost host = new HttpHost(
-            listenerContext.getHostname(), 
+            listenerContext.getBindAddress(),
             listenerContext.getPort(), 
             scheme.getName());
         ServerConnFactoryBuilder connFactoryBuilder = initConnFactoryBuilder(transportIn, host);
@@ -522,7 +522,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
         }
 
         HttpHost host = new HttpHost(
-                listenerContext.getHostname(),
+                listenerContext.getBindAddress(),
                 listenerContext.getPort(),
                 scheme.getName());
 
@@ -538,7 +538,7 @@ public class HttpCoreNIOListener implements TransportListener, ManagementSupport
 
         for (InetSocketAddress inetSocketAddress : endPointsToReload) {
             for (ListenerEndpoint listenerEndpoint : ioReactor.getEndpoints()) {
-                if (inetSocketAddress.getHostName().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getHostName())) {
+                if (inetSocketAddress.getAddress().getHostAddress().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getAddress().getHostAddress())) {
                     listenerEndpoint.close();
                     endPointsClosed.add((InetSocketAddress) listenerEndpoint.getAddress());
                 }

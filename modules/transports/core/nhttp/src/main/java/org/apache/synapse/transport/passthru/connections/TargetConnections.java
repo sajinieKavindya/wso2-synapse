@@ -94,7 +94,7 @@ public class TargetConnections {
         if (connection == null) {
             if (pool.canHaveMoreConnections()) {
                 HttpHost host = route.getProxyHost() != null ? route.getProxyHost() : route.getTargetHost();
-                ioReactor.connect(new InetSocketAddress(host.getHostName(), host.getPort()), null, pool, callback);
+                ioReactor.connect(new InetSocketAddress(host.getAddress(), host.getPort()), null, pool, callback);
             } else {
                 log.warn("Connection pool reached maximum allowed connections for route "
                         + route + ". Target server may have become slow");
@@ -225,15 +225,15 @@ public class TargetConnections {
                         if (connection != null && connection.getContext() != null) {
 
                             shutdownConnection(connectionsEntry.getValue().getConnection());
-                            log.info("Connection " + httpRoute.getTargetHost().getHostName() + ":"
+                            log.info("Connection " + httpRoute.getTargetHost().getAddress().getHostAddress() + ":"
                                      + httpRoute.getTargetHost().getPort() + " Successful");
 
                         } else {
-                            log.debug("Error shutdown connection for " + httpRoute.getTargetHost().getHostName()
+                            log.debug("Error shutdown connection for " + httpRoute.getTargetHost().getAddress().getHostAddress()
                                       + " " + httpRoute.getTargetHost().getPort() + " - Connection not available");
                         }
                     } catch (Exception e) {
-                        log.warn("Error shutdown connection for " + httpRoute.getTargetHost().getHostName()
+                        log.warn("Error shutdown connection for " + httpRoute.getTargetHost().getAddress().getHostAddress()
                                  + " " + httpRoute.getTargetHost().getPort() + " ", e);
                     }
 

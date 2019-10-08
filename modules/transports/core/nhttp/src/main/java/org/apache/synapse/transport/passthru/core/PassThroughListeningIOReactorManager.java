@@ -355,7 +355,7 @@ public class PassThroughListeningIOReactorManager {
                             }
 
                             for (InetSocketAddress inetSocketAddress : bindAddresses) {
-                                if (inetSocketAddress.getHostName().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getHostName())) {
+                                if (inetSocketAddress.getAddress().getHostAddress().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getAddress().getHostAddress())) {
                                     listenerEndpoint.close();
                                 }
                             }
@@ -364,7 +364,7 @@ public class PassThroughListeningIOReactorManager {
                 } else {
                     for (ListenerEndpoint listenerEndpoint : endpoints) {
                         for (InetSocketAddress inetSocketAddress : bindAddresses) {
-                            if (inetSocketAddress.getHostName().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getHostName())) {
+                            if (inetSocketAddress.getAddress().getHostAddress().equalsIgnoreCase(((InetSocketAddress) listenerEndpoint.getAddress()).getAddress().getHostAddress())) {
                                 listenerEndpoint.close();
                             }
                         }
@@ -614,7 +614,7 @@ public class PassThroughListeningIOReactorManager {
             InetSocketAddress address = (InetSocketAddress) endpoint.getAddress();
             if (!address.isUnresolved()) {
                 log.info((endPointName != null ? "Pass-through " + endPointName : " Pass-through Http ") +
-                         " Listener started on " + address.getHostName() + ":" + address.getPort());
+                         " Listener started on " + address.getAddress().getHostAddress() + ":" + address.getPort());
             } else {
                 log.info((endPointName != null ? "Pass-through " + endPointName : " Pass-through Http ") +
                          " Listener started on " + address);

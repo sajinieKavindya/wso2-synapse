@@ -799,7 +799,7 @@ public class SALSessions {
 
         if (log.isDebugEnabled()) {
             log.debug("Creating a session information for given session id  " + id
-                    + " with member Host:" + currentMember.getHostName() + " Port:"
+                    + " with member Host:" + currentMember.getHostName()+ " Port:"
                     + currentMember.getPort());
         }
 

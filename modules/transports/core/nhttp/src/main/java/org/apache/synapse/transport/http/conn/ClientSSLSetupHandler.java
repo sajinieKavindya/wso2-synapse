@@ -163,7 +163,7 @@ public class ClientSSLSetupHandler implements SSLSetupHandler {
         SocketAddress remoteAddress = iosession.getRemoteAddress();
         String address;
         if (remoteAddress instanceof InetSocketAddress) {
-            address = ((InetSocketAddress) remoteAddress).getHostName();
+            address = ((InetSocketAddress) remoteAddress).getAddress().toString();
         } else {
             address = remoteAddress.toString();
         }
