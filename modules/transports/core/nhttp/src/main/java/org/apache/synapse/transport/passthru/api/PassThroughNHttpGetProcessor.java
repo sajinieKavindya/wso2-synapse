@@ -42,6 +42,7 @@ import org.apache.synapse.transport.passthru.ProtocolState;
 import org.apache.synapse.transport.passthru.SourceContext;
 import org.apache.synapse.transport.passthru.SourceHandler;
 import org.apache.ws.commons.schema.XmlSchema;
+import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -125,7 +126,12 @@ public class PassThroughNHttpGetProcessor implements HttpGetRequestProcessor {
 		}
 	}
 
-    private void sendResponseAndFinish(HttpResponse response, int status,
+	@Override
+	public void process(HttpCarbonMessage inboundCarbonMsg, HttpCarbonMessage outboundCarbonMsg, MessageContext messageContext, boolean b) {
+
+	}
+
+	private void sendResponseAndFinish(HttpResponse response, int status,
                                        NHttpServerConnection conn, OutputStream os,
                                        MessageContext msgContext) {
         response.setStatusCode(status);

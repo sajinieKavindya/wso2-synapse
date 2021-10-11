@@ -30,6 +30,8 @@ import org.apache.synapse.transport.passthru.Pipe;
 import org.wso2.caching.CacheConfiguration;
 import org.wso2.caching.CachingConstants;
 
+import java.util.Objects;
+
 public class CacheMessageBuilderDispatchandler extends AbstractDispatcher {
 
 	private static final Log log = LogFactory.getLog(CacheMessageBuilderDispatchandler.class);
@@ -44,7 +46,8 @@ public class CacheMessageBuilderDispatchandler extends AbstractDispatcher {
 
 		Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
 
-		if (pipe != null && messageContext.getAxisMessage() != null) {
+		if ((pipe != null || Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE")))
+				&& messageContext.getAxisMessage() != null) {
 			CacheConfiguration cacheCfg = null;
 			Parameter ccfgParam = messageContext.getAxisMessage().getParameter(CachingConstants.CACHE_CONFIGURATION);
 			

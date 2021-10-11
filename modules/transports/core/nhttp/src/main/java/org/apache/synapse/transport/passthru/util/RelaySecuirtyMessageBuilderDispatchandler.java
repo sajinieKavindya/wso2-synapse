@@ -44,6 +44,7 @@ import org.apache.synapse.transport.passthru.Pipe;
 import javax.xml.namespace.QName;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 
 public class RelaySecuirtyMessageBuilderDispatchandler  extends AbstractDispatcher{
 
@@ -65,7 +66,7 @@ public class RelaySecuirtyMessageBuilderDispatchandler  extends AbstractDispatch
 
 		Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
 		
-		if (pipe != null) {
+		if (pipe != null || Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE"))) {
 			if (toEPR != null) {
 
 				ConfigurationContext configurationContext = messageContext.getConfigurationContext();

@@ -24,6 +24,7 @@ import org.apache.axis2.context.MessageContext;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
 import org.apache.http.nio.NHttpServerConnection;
+import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.OutputStream;
 
@@ -61,5 +62,8 @@ public interface HttpGetRequestProcessor {
                  NHttpServerConnection conn,
                  OutputStream os,
                  boolean isRestDispatching);
+
+    public void process (HttpCarbonMessage inboundCarbonMsg, HttpCarbonMessage outboundCarbonMsg,
+                         MessageContext messageContext, boolean b);
 
 }
