@@ -18,6 +18,7 @@ package org.apache.synapse.inbound;
 
 import org.apache.synapse.core.SynapseEnvironment;
 
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -32,6 +33,7 @@ public class InboundProcessorParams {
     private String injectingSeq;
     private String onErrorSeq;
     private SynapseEnvironment synapseEnvironment;
+    private Map<String, InboundEndpointHandler> handlers;
 
     /**
      * Get the name of the inbound endpoint
@@ -161,4 +163,13 @@ public class InboundProcessorParams {
         this.synapseEnvironment = synapseEnvironment;
     }
 
+    public Map<String, InboundEndpointHandler> getHandlers() {
+
+        return handlers;
+    }
+
+    public void addHandler(InboundEndpointHandler handler) {
+
+        this.handlers.put("fdfd", handler);
+    }
 }

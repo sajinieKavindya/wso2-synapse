@@ -32,8 +32,10 @@ import org.apache.synapse.mediators.Value;
 import org.apache.synapse.util.xpath.SynapseXPath;
 import org.jaxen.JaxenException;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.ServiceLoader;
@@ -55,6 +57,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private String onErrorSeq;
     private Map<String, String> parametersMap = new LinkedHashMap<String, String>();
     private Map<String, String> parameterKeyMap = new LinkedHashMap<String, String>();
+    private List<InboundEndpointHandler> handlers = new ArrayList();
     private String fileName;
     private SynapseEnvironment synapseEnvironment;
     private InboundRequestProcessor inboundRequestProcessor;
@@ -320,5 +323,15 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
             }
         }
 
+    }
+
+    public List<InboundEndpointHandler> getHandlers() {
+
+        return handlers;
+    }
+
+    public void addHandler(InboundEndpointHandler handler) {
+
+        this.handlers.add(handler);
     }
 }

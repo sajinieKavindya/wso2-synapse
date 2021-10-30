@@ -92,6 +92,8 @@ public abstract class AbstractListMediator extends AbstractMediator
 
                 if (sequenceContentAware && (mediator.isContentAware() || isStreamXpathEnabled) &&
                         (!Boolean.TRUE.equals(synCtx.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED)))) {
+                    ((Axis2MessageContext) synCtx).getAxis2MessageContext().setProperty("CONTENT_AWARE_MEDIATOR_FOUND",
+                            true);
                     buildMessage(synCtx, synLog);
                 }
 

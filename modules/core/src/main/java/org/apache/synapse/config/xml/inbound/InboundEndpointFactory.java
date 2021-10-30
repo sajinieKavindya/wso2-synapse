@@ -31,9 +31,12 @@ import org.apache.synapse.aspects.AspectConfiguration;
 import org.apache.synapse.commons.resolvers.ResolverFactory;
 import org.apache.synapse.config.SynapseConfiguration;
 import org.apache.synapse.config.xml.XMLConfigConstants;
+import org.apache.synapse.config.xml.rest.APIFactory;
 import org.apache.synapse.inbound.InboundEndpoint;
 import org.apache.synapse.inbound.InboundEndpointConstants;
 
+import org.apache.synapse.inbound.InboundEndpointHandler;
+import org.apache.synapse.rest.Handler;
 import sun.util.logging.resources.logging;
 
 import javax.xml.namespace.QName;
@@ -158,6 +161,34 @@ public class InboundEndpointFactory {
                 }
             }
         }
+
+        // Set Inbound Endpoint Handlers
+        OMElement handlersElt = inboundEndpointElem.getFirstChildWithName(
+                new QName(XMLConfigConstants.SYNAPSE_NAMESPACE,
+                        InboundEndpointConstants.INBOUND_ENDPOINT_HANDLERS));
+        if (handlersElt != null) {
+            Iterator handlers =
+                    handlersElt.getChildrenWithName(
+                            new QName(XMLConfigConstants.SYNAPSE_NAMESPACE,
+                                    InboundEndpointConstants.INBOUND_ENDPOINT_HANDLER));
+
+            while (handlers.hasNext()) {
+                OMElement handler = (OMElement) handlers.next();
+                String handlerClass = handler.getAttributeValue(new QName(
+                        InboundEndpointConstants.INBOUND_ENDPOINT_CLASS));
+
+                try {
+                    Class clazz = APIFactory.class.getClassLoader().loadClass(handlerClass);
+                    InboundEndpointHandler inboundEndpointHandler = (InboundEndpointHandler) clazz.newInstance();
+                    inboundEndpoint.addHandler(inboundEndpointHandler);
+                } catch (Exception e) {
+                    String errorMsg = "Error initializing Inbound Endpoint handler: " + handlerClass;
+                    log.error(errorMsg, e);
+                    throw new SynapseException(errorMsg, e);
+                }
+            }
+        }
+
         inboundEndpoint.setFileName(inboundEndpointElem.getAttributeValue(new QName(InboundEndpointConstants.INBOUND_ENDPOINT_NAME))+".xml");
         return inboundEndpoint;
     }

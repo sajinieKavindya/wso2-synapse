@@ -71,6 +71,7 @@ public class HttpRequestWorker implements Runnable {
     private HttpCarbonMessage incomingCarbonMsg;
     private TransportInDescription transportInDescription;
     private HttpGetRequestProcessor httpGetRequestProcessor;
+    private org.apache.axis2.context.MessageContext msgCtx = null;
 
     public HttpRequestWorker(HttpCarbonMessage incomingCarbonMsg, ConfigurationContext configurationContext,
                              TransportInDescription transportInDescription) {
@@ -78,6 +79,8 @@ public class HttpRequestWorker implements Runnable {
         this.configurationContext = configurationContext;
         this.incomingCarbonMsg = incomingCarbonMsg;
         this.transportInDescription = transportInDescription;
+
+        msgCtx = RequestUtils.convertCarbonMsgToAxis2MsgCtx(configurationContext, incomingCarbonMsg);
 
         Parameter param = transportInDescription.getParameter(NhttpConstants.HTTP_GET_PROCESSOR);
         if (param != null && param.getValue() != null) {
@@ -96,7 +99,6 @@ public class HttpRequestWorker implements Runnable {
     @Override
     public void run() {
 
-        MessageContext msgCtx = RequestUtils.convertCarbonMsgToAxis2MsgCtx(configurationContext, incomingCarbonMsg);
         processHttpRequestUri(msgCtx);
         if (isRequestToFetchWSDL(msgCtx)) {
             return;
@@ -105,7 +107,7 @@ public class HttpRequestWorker implements Runnable {
         boolean isRest = isRESTRequest(msgCtx, incomingCarbonMsg.getHttpMethod());
 
         if (!isRest) {
-            if (isEntityEnclosing(incomingCarbonMsg) > 0) {
+            if (isEntityEnclosing(incomingCarbonMsg)) {
                 processEntityEnclosingRequest(msgCtx, true);
             } else {
                 processNonEntityEnclosingRESTHandler(null, msgCtx, true);
@@ -227,7 +229,7 @@ public class HttpRequestWorker implements Runnable {
         }
     }
 
-    private long isEntityEnclosing(HttpCarbonMessage httpCarbonMessage) {
+    private boolean isEntityEnclosing(HttpCarbonMessage httpCarbonMessage) {
 
         long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
         String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
@@ -240,7 +242,7 @@ public class HttpRequestWorker implements Runnable {
         } catch (NumberFormatException e) {
             LOGGER.error("NumberFormatException. Invalid content length");
         }
-        return contentLength;
+        return contentLength > 0;
     }
 
     public void processEntityEnclosingRequest(MessageContext msgContext, boolean injectToAxis2Engine) {
@@ -331,7 +333,7 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
         msgContext.setServerSide(true);
         msgContext.setDoingREST(true);
-        if (isEntityEnclosing(incomingCarbonMsg) > 0) {
+        if (!isEntityEnclosing(incomingCarbonMsg)) {
             msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
         }
 
