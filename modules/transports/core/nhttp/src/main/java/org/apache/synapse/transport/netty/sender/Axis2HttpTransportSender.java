@@ -23,6 +23,8 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.LastHttpContent;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.addressing.AddressingConstants;
@@ -38,7 +40,6 @@ import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.axis2.transport.base.threads.WorkerPoolFactory;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageProcessorSelector;
-import io.netty.handler.codec.http.HttpVersion;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
@@ -59,6 +60,7 @@ import org.wso2.transport.http.netty.contract.HttpClientConnector;
 import org.wso2.transport.http.netty.contract.HttpResponseFuture;
 import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contract.config.ChunkConfig;
+import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
 import org.wso2.transport.http.netty.contract.config.SenderConfiguration;
 import org.wso2.transport.http.netty.contractimpl.DefaultHttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.ConnectionManager;
@@ -75,11 +77,8 @@ import java.net.URL;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.TreeMap;
 import javax.xml.stream.XMLStreamException;
 
 /**
@@ -89,20 +88,20 @@ import javax.xml.stream.XMLStreamException;
 public class Axis2HttpTransportSender extends AbstractHandler implements TransportSender {
 
     private static final Logger LOG = Logger.getLogger(Axis2HttpTransportSender.class);
-    private HttpClientConnector clientConnector;
 
     private WorkerPool workerPool;
 
     private final DigestGenerator digestGenerator  = CachingConstants.DEFAULT_XML_IDENTIFIER;
 
+    ConnectionManager connectionManager;
+
+    HttpWsConnectorFactory httpWsConnectorFactory;
+
     @Override
     public void init(ConfigurationContext configurationContext, TransportOutDescription transportOutDescription) {
 
-        HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
-        SenderConfiguration senderConfiguration = new SenderConfiguration();
-        ConnectionManager connectionManager = new ConnectionManager(new PoolConfiguration());
-        clientConnector = httpWsConnectorFactory
-                .createHttpClientConnector(new HashMap<>(), senderConfiguration, connectionManager);
+        httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
+        connectionManager = new ConnectionManager(new PoolConfiguration());
         workerPool = WorkerPoolFactory.getWorkerPool(BridgeConstants.DEFAULT_WORKER_POOL_SIZE_CORE,
                 BridgeConstants.DEFAULT_WORKER_POOL_SIZE_MAX,
                 BridgeConstants.DEFAULT_WORKER_THREAD_KEEPALIVE_SEC,
@@ -115,12 +114,19 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     public InvocationResponse invoke(MessageContext msgCtx) throws AxisFault {
 
         Boolean noEntityBody = (Boolean) msgCtx.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-        if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
-            noEntityBody = false;
-        }
-        if ((Objects.isNull(noEntityBody) || !noEntityBody)) {
+//        if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+//            noEntityBody = false;
+//        }
+        if ((Objects.isNull(noEntityBody) || !noEntityBody)
+                && msgCtx.getEnvelope().getBody().getFirstElement() != null) {
             msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, true);
         }
+
+//        Boolean contentAwareMediatorFound = (Boolean) msgCtx.getProperty("CONTENT_AWARE_MEDIATOR_FOUND");
+//
+//        if ((Objects.isNull(noEntityBody) || !noEntityBody) && contentAwareMediatorFound) {
+//            msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, true);
+//        }
 
         HttpCarbonMessage originalCarbonMessage =
                 (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
@@ -133,18 +139,8 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         RequestUtils.removeUnwantedHeaders(msgCtx);
 
         if (AddressingHelper.isReplyRedirected(msgCtx) && !msgCtx.getReplyTo().hasNoneAddress()) {
-
             msgCtx.setProperty(PassThroughConstants.IGNORE_SC_ACCEPTED, org.apache.axis2.Constants.VALUE_TRUE);
         }
-
-        HttpCarbonMessage outboundHttpCarbonMsg;
-//        if (Boolean.TRUE.equals(msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
-//            outboundHttpCarbonMsg = RequestUtils.convertAxis2MsgCtxToCarbonMsg(msgCtx);
-//        } else {
-//            outboundHttpCarbonMsg = RequestUtils.createOutboundCarbonMsg(originalCarbonMessage, msgCtx);
-//        }
-
-//        msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundHttpCarbonMsg);
 
         EndpointReference destinationEPR = RequestUtils.getDestinationEPR(msgCtx);
         if (destinationEPR != null) {
@@ -153,9 +149,12 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
             try {
                 URL destinationURL = new URL(destinationEPR.getAddress());
-//                sendForward(msgCtx, originalCarbonMessage, destinationURL);
+                sendForward(msgCtx, originalCarbonMessage, destinationURL);
             } catch (MalformedURLException e) {
                 handleException("Malformed Endpoint url found", e);
+            } catch (IOException e) {
+                // TODO: this is a temporary fix. need to carefully handle the exception
+                handleException("IOException found", e);
             }
         } else { // Response submission back to the client
             sendBack(msgCtx, originalCarbonMessage);
@@ -210,15 +209,15 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
         }
 
-        HttpCarbonMessage outboundResponseCarbonMessage =
-                RequestUtils.createOutboundResponse(inboundCarbonMessage, msgCtx);
+        HttpCarbonMessage outboundResponseCarbonMessage = RequestUtils.createOutboundResponse(inboundCarbonMessage, msgCtx);
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundResponseCarbonMessage);
 
         try {
-            clientRequest.respond(outboundResponseCarbonMessage);
+
 
             if (Boolean.TRUE.equals((msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED)))) {
-                final HttpMessageDataStreamer httpMessageDataStreamer = getHttpMessageDataStreamer(outboundResponseCarbonMessage);
+                final HttpMessageDataStreamer httpMessageDataStreamer =
+                        getHttpMessageDataStreamer(outboundResponseCarbonMessage);
                 OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
                 OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
                 try {
@@ -234,9 +233,16 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                     }
                 }
             } else {
-                HttpContent httpContent = inboundCarbonMessage.getHttpContent();
-                outboundResponseCarbonMessage.addHttpContent(httpContent);
+                do {
+                    HttpContent httpContent = inboundCarbonMessage.getHttpContent();
+                    outboundResponseCarbonMessage.addHttpContent(httpContent);
+                    if (httpContent instanceof LastHttpContent) {
+                        break;
+                    }
+                } while (true);
             }
+
+            clientRequest.respond(outboundResponseCarbonMessage);
         } catch (Exception e) {
             LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error occurred while submitting the response " +
                     "back to the client", e);
@@ -244,8 +250,8 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     }
 
     // outgoing request (transport --> remote)
-    private void sendForward(MessageContext msgCtx, HttpCarbonMessage inboundCarbonMessage,
-                             HttpCarbonMessage httpCarbonMessage, URL url) throws AxisFault {
+    private void sendForward(MessageContext msgCtx, HttpCarbonMessage inboundCarbonMessage, URL url)
+            throws IOException {
 
         // TODO: Check if this is needed
 //        // NOTE:this a special case where, when the backend service expects content-length but,there is no
@@ -262,138 +268,76 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 //                    (String) msgCtx.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH)));
 //        }
 
+        SenderConfiguration senderConfiguration = new SenderConfiguration();
+//        senderConfiguration.setHttpTraceLogEnabled(true);
         HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(new DefaultHttpRequest(HttpVersion.HTTP_1_1,
                 HttpMethod.POST, ""));
 
         int port = getOutboundReqPort(url);
         String host = url.getHost();
-        setOutboundReqProperties(httpCarbonMessage, url, port, host, msgCtx);
-        setOutboundReqHeaders(httpCarbonMessage, port, host, msgCtx);
+        String httpVersion = setHTTPVersion(msgCtx, outboundHttpCarbonMessage);
+        setHTTPMethod(msgCtx, outboundHttpCarbonMessage);
+        setOutboundReqProperties(outboundHttpCarbonMessage, msgCtx, url, host, port);
+        setOutboundReqHeaders(outboundHttpCarbonMessage, msgCtx, host, port);
 
+        senderConfiguration.setHttpVersion(httpVersion);
 
-        String httpMethod = (String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
-        if (Objects.isNull(httpMethod)) {
-            httpMethod = HTTPConstants.HTTP_METHOD_POST;
-        }
-        outboundHttpCarbonMessage.setHttpMethod(httpMethod);
-
-
-        // version
-        String forceHttp10 = (String) msgCtx.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
-        if (org.apache.axis2.Constants.VALUE_TRUE.equals(forceHttp10)) {
-            outboundHttpCarbonMessage.setHttpVersion("1.0");
-            // need to set the version in the client connector
-        } else {
-            outboundHttpCarbonMessage.setHttpVersion("1.1");
-        }
 
         // keep alive
         String noKeepAlive = (String) msgCtx.getProperty(PassThroughConstants.NO_KEEPALIVE);
-        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive) || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
+        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
+                || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
             outboundHttpCarbonMessage.setKeepAlive(false);
-            // need to set in the carbon msg
+            senderConfiguration.setKeepAliveConfig(KeepAliveConfig.NEVER);
+            // TODO: check if the header needs to be set separately
+//            request.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
         } else {
             outboundHttpCarbonMessage.setKeepAlive(true);
+            senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
         }
 
-        // chunk
-        String disableChunking = (String) msgCtx.getProperty(PassThroughConstants.DISABLE_CHUNKING);
-        if (org.apache.axis2.Constants.VALUE_TRUE.equals(disableChunking)) {
-            outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, ChunkConfig.NEVER);
-            // need to set the version in the client connector
-        } else {
-            outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, ChunkConfig.ALWAYS);
-        }
-
-        // Add excess response header.
-        addExcessHeaders(msgCtx, outboundHttpCarbonMessage);
-
-        // Check HTTP method is GET or DELETE with no body
-        if (RequestUtils.ignoreMessageBody(msgCtx)) {
-            return;
-        }
-
-        ////// inside targetRequest
-
-        //fix GET request empty body
-        if ((PassThroughConstants.HTTP_GET.equals(requestMsgCtx.getProperty(org.apache.axis2.Constants.Configuration.HTTP_METHOD))) ||
-                (RelayUtils.isDeleteRequestWithoutPayload(requestMsgCtx))) {
-            hasEntityBody = false;
-            MessageFormatter formatter = MessageProcessorSelector.getMessageFormatter(requestMsgCtx);
-            OMOutputFormat format = PassThroughTransportUtils.getOMOutputFormat(requestMsgCtx);
-            if (formatter != null && format != null) {
-                URL _url = formatter.getTargetAddress(requestMsgCtx, format, url);
-                if (_url != null && !_url.toString().isEmpty()) {
-                    if (requestMsgCtx.getProperty(NhttpConstants.POST_TO_URI) != null
-                            && Boolean.TRUE.toString().equals(requestMsgCtx.getProperty(NhttpConstants.POST_TO_URI))) {
-                        path = _url.toString();
-                    } else {
-                        path = _url.getPath()
-                                + ((_url.getQuery() != null && !_url.getQuery().isEmpty())
-                                ? ("?" + _url.getQuery())
-                                : "");
-                    }
-
-                }
-                headers.remove(HTTP.CONTENT_TYPE);
-            }
-        }
-
-        Object o = requestMsgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
-        if (o != null && o instanceof TreeMap) {
-            Map _headers = (Map) o;
-            String trpContentType = (String) _headers.get(HTTP.CONTENT_TYPE);
-            if (trpContentType != null && !trpContentType.equals("")
-                    && !TargetRequestFactory.isMultipartContent(trpContentType)) {
-                addHeader(HTTP.CONTENT_TYPE, trpContentType);
-            }
-
-        }
-
-        if (hasEntityBody) {
-            boolean forceContentLength = requestMsgCtx.isPropertyTrue(
+        if (hasEntityBody(msgCtx)) {
+            boolean chunk = true;
+            boolean forceContentLength = msgCtx.isPropertyTrue(
                     NhttpConstants.FORCE_HTTP_CONTENT_LENGTH);
-            boolean forceContentLengthCopy = requestMsgCtx.isPropertyTrue(
+            boolean forceContentLengthCopy = msgCtx.isPropertyTrue(
                     PassThroughConstants.COPY_CONTENT_LENGTH_FROM_INCOMING);
 
             if (forceContentLength) {
-                entity.setChunked(false);
-                if (forceContentLengthCopy && contentLength != -1) {
-                    entity.setContentLength(contentLength);
-                }
+                // set chunk to NEVER
+                chunk = false;
             } else {
-                if (contentLength != -1) {
-                    entity.setChunked(false);
-                    entity.setContentLength(contentLength);
-                } else {
-                    entity.setChunked(chunk);
+                String disableChunking = (String) msgCtx.getProperty(PassThroughConstants.DISABLE_CHUNKING);
+                if (org.apache.axis2.Constants.VALUE_TRUE.equals(disableChunking)
+                        || org.apache.axis2.Constants.VALUE_TRUE.equals((String)
+                        msgCtx.getProperty(PassThroughConstants.FORCE_HTTP_1_0))) {
+                    // set chunk to NEVER
+                    chunk = false;
                 }
             }
-
+            if (chunk) {
+                senderConfiguration.setChunkingConfig(ChunkConfig.ALWAYS);
+            } else {
+                senderConfiguration.setChunkingConfig(ChunkConfig.NEVER);
+            }
         }
 
-        //setup wsa action..
-        setWSAActionIfApplicable(msgCtx, outboundHttpCarbonMessage);
+        HttpClientConnector clientConnector = httpWsConnectorFactory
+                .createHttpClientConnector(new HashMap<>(), senderConfiguration, connectionManager);
 
-        //Chunking is not performed for request has "http 1.0" and "GET" http method
-        if (!((request.getProtocolVersion().equals(HttpVersion.HTTP_1_0)) ||
-                (PassThroughConstants.HTTP_GET.equals(requestMsgCtx.getProperty(org.apache.axis2.Constants.Configuration.HTTP_METHOD))) ||
-                RelayUtils.isDeleteRequestWithoutPayload(requestMsgCtx) || !(hasEntityBody))) {
-            this.processChunking(conn, requestMsgCtx);
-        }
-
-        if (!keepAlive) {
-            request.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
-        }
-
-
-        HttpResponseFuture future = clientConnector.send(httpCarbonMessage);
-
+        msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundHttpCarbonMessage);
+        HttpResponseFuture future = clientConnector.send(outboundHttpCarbonMessage);
         future.setHttpConnectorListener(new PassThroughHttpOutboundRespListener(workerPool, msgCtx));
+
+        // Check HTTP method is GET or DELETE with no body
+//        if (RequestUtils.ignoreMessageBody(msgCtx)) {
+//            return;
+//        }
 
         // serialize
         if (Boolean.TRUE.equals(msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
-            final HttpMessageDataStreamer outboundMsgDataStreamer = getHttpMessageDataStreamer(httpCarbonMessage);
+            final HttpMessageDataStreamer outboundMsgDataStreamer =
+                    getHttpMessageDataStreamer(outboundHttpCarbonMessage);
             final OutputStream outputStream = outboundMsgDataStreamer.getOutputStream();
             OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
             try {
@@ -408,6 +352,14 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                     LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + e.getMessage());
                 }
             }
+        } else {
+            do {
+                HttpContent httpContent = inboundCarbonMessage.getHttpContent();
+                outboundHttpCarbonMessage.addHttpContent(httpContent);
+                if (httpContent instanceof LastHttpContent) {
+                    break;
+                }
+            } while (true);
         }
     }
 
@@ -434,6 +386,20 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 }
             }
         }
+    }
+
+    private boolean hasEntityBody(MessageContext msgCtx) {
+        if ((PassThroughConstants.HTTP_GET.equals(msgCtx.getProperty(BridgeConstants.HTTP_METHOD)))
+                || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
+            return false;
+        }
+
+        Boolean noEntityBody = (Boolean) msgCtx.getProperty(PassThroughConstants.NO_ENTITY_BODY);
+
+        if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+            noEntityBody = false;
+        }
+        return !noEntityBody;
     }
 
 
@@ -469,18 +435,19 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     }
 
 
-    private void setOutboundReqHeaders(HttpCarbonMessage outboundRequest, int port, String host,
-                                       MessageContext msgCtx) {
+    private void setOutboundReqHeaders(HttpCarbonMessage outboundRequest, MessageContext msgCtx,
+                                       String host, int port) throws AxisFault {
 
-        HttpHeaders headers = outboundRequest.getHeaders();
-        setHostHeader(host, port, headers, msgCtx);
+        setHostHeader(host, port, outboundRequest, msgCtx);
         addTransportHeaders(msgCtx, outboundRequest);
         setContentTypeHeaderIfApplicable(msgCtx, outboundRequest);
         addExcessHeaders(msgCtx, outboundRequest);
+        //setup wsa action..
+        setWSAActionIfApplicable(msgCtx, outboundRequest);
     }
 
-    private void setOutboundReqProperties(HttpCarbonMessage outboundRequest, URL url, int port, String host,
-                                          MessageContext msgCtx) {
+    private void setOutboundReqProperties(HttpCarbonMessage outboundRequest, MessageContext msgCtx, URL url,
+                                          String host, int port) throws IOException {
 
         outboundRequest.setProperty(Constants.HTTP_HOST, host);
         outboundRequest.setProperty(Constants.HTTP_PORT, port);
@@ -489,8 +456,9 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         outboundRequest.setProperty(Constants.PROTOCOL, url.getProtocol() != null ? url.getProtocol() : "http");
     }
 
-    private void setHostHeader(String host, int port, HttpHeaders headers, MessageContext msgCtx) {
+    private void setHostHeader(String host, int port, HttpCarbonMessage outboundRequest, MessageContext msgCtx) {
 
+        HttpHeaders headers = outboundRequest.getHeaders();
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
         if (Objects.nonNull(transportHeaders)) {
             transportHeaders.remove(HTTPConstants.HEADER_HOST);
@@ -509,10 +477,30 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         } else {
             headers.set(HttpHeaderNames.HOST, host + ":" + port);
         }
-        // TODO: need to remove the HOST header from transport headers
     }
 
-    private String getOutboundReqPath(URL url, MessageContext msgCtx) {
+    private void setHTTPMethod(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
+        String httpMethod = (String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
+        if (Objects.isNull(httpMethod)) {
+            httpMethod = HTTPConstants.HTTP_METHOD_POST;
+        }
+        outboundRequest.setHttpMethod(httpMethod);
+    }
+
+    private String setHTTPVersion(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
+        String version;
+        String forceHttp10 = (String) msgCtx.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
+        if (org.apache.axis2.Constants.VALUE_TRUE.equals(forceHttp10)) {
+            version = "1.0";
+            // need to set the version in the client connector
+        } else {
+            version = "1.1";
+        }
+        outboundRequest.setHttpVersion(version);
+        return version;
+    }
+
+    private String getOutboundReqPath(URL url, MessageContext msgCtx) throws IOException {
 
         if ((PassThroughConstants.HTTP_GET.equals(msgCtx.getProperty(BridgeConstants.HTTP_METHOD)))
                 || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
@@ -539,7 +527,8 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         }
 
         String fullUrl = (String) msgCtx.getProperty(PassThroughConstants.FULL_URI);
-        String path = fullUrl || (route.getProxyHost() != null && !route.isTunnelled()) ?
+        // TODO: need to check "(route.getProxyHost() != null && !route.isTunnelled())" as well
+        String path = "true".equals(fullUrl) ?
                 url.toString() : url.getPath() +
                 (url.getQuery() != null ? "?" + url.getQuery() : "");
 
@@ -557,12 +546,13 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         return port;
     }
 
-    private void setContentTypeHeaderIfApplicable(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
+    private void setContentTypeHeaderIfApplicable(MessageContext msgCtx, HttpCarbonMessage outboundRequest)
+            throws AxisFault {
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
         String cType = RequestUtils.getContentType(msgCtx,
                 DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE), transportHeaders);
         if (cType != null
-                && !HTTPConstants.HTTP_METHOD_GET.equals(outboundRequest.getHttpMethod())
+                && !HTTPConstants.HTTP_METHOD_GET.equals((String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD))
                 && shouldOverwriteContentType(msgCtx, outboundRequest)) {
             String messageType = (String) msgCtx.getProperty(NhttpConstants.MESSAGE_TYPE);
             if (messageType != null) {

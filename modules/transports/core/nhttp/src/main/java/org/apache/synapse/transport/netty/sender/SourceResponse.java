@@ -140,6 +140,15 @@ public class SourceResponse {
 
         outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, chunkConfig);
 
+        outboundHttpCarbonMessage.setHttpStatusCode(statusCode);
+        String httpVersion;
+        if (version == HttpVersion.HTTP_1_0) {
+            httpVersion = "1.0";
+        } else {
+            httpVersion = "1.1";
+        }
+        outboundHttpCarbonMessage.setHttpVersion(httpVersion);
+
         response = outboundHttpCarbonMessage;
 
     }

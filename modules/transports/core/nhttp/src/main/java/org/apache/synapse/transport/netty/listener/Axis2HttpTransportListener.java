@@ -60,6 +60,8 @@ public class Axis2HttpTransportListener implements TransportListener {
         HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
 
         ListenerConfiguration listenerConfiguration = new ListenerConfiguration();
+//        listenerConfiguration.setHttpTraceLogEnabled(true);
+//        listenerConfiguration.setHttpAccessLogEnabled(true);
         Parameter portParam = transportInDescription.getParameter("port");
         int port = Integer.parseInt(portParam.getValue().toString());
         listenerConfiguration.setPort(port);
