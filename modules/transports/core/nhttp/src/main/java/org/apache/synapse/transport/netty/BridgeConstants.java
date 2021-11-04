@@ -73,4 +73,6 @@ public class BridgeConstants {
 
     // move later
     public static final String CARBON_SERVER_XML_NAMESPACE = "http://wso2.org/projects/carbon/carbon.xml";
+
+    public static final String CHUNKING_CONFIG = "chunking_config";
 }

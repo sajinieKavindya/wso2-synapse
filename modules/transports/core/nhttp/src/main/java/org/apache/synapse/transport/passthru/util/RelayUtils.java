@@ -44,6 +44,7 @@ import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.ServerWorker;
 import org.apache.synapse.transport.passthru.TargetRequest;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
+import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
