@@ -1,6 +1,7 @@
 package org.apache.synapse.transport.netty.util;
 
 import org.apache.http.protocol.HTTP;
+import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
 
 import java.util.ArrayList;
@@ -78,6 +79,14 @@ public class DataHolder {
         if (preserveUserAgentHeader && !preserveHttpHeaders.contains(HTTP.USER_AGENT.toUpperCase())) {
             preserveHttpHeaders.add(HTTP.USER_AGENT.toUpperCase());
         }
+    }
+
+    public boolean isForcedXmlMessageValidationEnabled() {
+        return passThroughConfiguration.getBooleanProperty(PassThroughConstants.FORCE_XML_MESSAGE_VALIDATION, false);
+    }
+
+    public Boolean getBooleanProperty(String name) {
+        return passThroughConfiguration.getBooleanProperty(name, null);
     }
 
 }

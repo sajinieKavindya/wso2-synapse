@@ -394,12 +394,11 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             return false;
         }
 
-        Boolean noEntityBody = (Boolean) msgCtx.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-
         if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
-            noEntityBody = false;
+            return true;
         }
-        return !noEntityBody;
+
+        return !Boolean.TRUE.equals(msgCtx.getProperty(NhttpConstants.NO_ENTITY_BODY));
     }
 
 

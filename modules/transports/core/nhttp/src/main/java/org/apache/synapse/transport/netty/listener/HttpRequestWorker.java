@@ -82,6 +82,7 @@ public class HttpRequestWorker implements Runnable {
 
         msgCtx = RequestUtils.convertCarbonMsgToAxis2MsgCtx(configurationContext, incomingCarbonMsg);
 
+
         Parameter param = transportInDescription.getParameter(NhttpConstants.HTTP_GET_PROCESSOR);
         if (param != null && param.getValue() != null) {
             httpGetRequestProcessor = RequestUtils.createHttpGetProcessor(param.getValue().toString());

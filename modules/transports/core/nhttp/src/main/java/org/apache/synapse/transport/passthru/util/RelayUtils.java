@@ -125,8 +125,8 @@ public class RelayUtils {
                     }
 
                     buildMessage(messageContext, earlyBuild, in);
-                } else if (Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE"))) {
-                    MessageUtils.buildMessage(messageContext);
+                } else if (Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE")) && forcePTBuild) {
+                    MessageUtils.buildMessage(messageContext, earlyBuild);
                 }
             }
         } else {
