@@ -18,7 +18,9 @@
  */
 package org.apache.synapse.transport.netty.listener;
 
+import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.DefaultHttpResponse;
+import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -39,23 +41,42 @@ import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.dispatchers.RequestURIBasedDispatcher;
 import org.apache.axis2.engine.AxisEngine;
+import org.apache.axis2.transport.RequestResponseTransport;
 import org.apache.axis2.transport.TransportUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.HTTPTransportUtils;
+import org.apache.axis2.util.MessageContextBuilder;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.http.HttpStatus;
+import org.apache.http.nio.NHttpServerConnection;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
+import org.apache.synapse.commons.handlers.HandlerResponseDTO;
+import org.apache.synapse.commons.handlers.MessagingHandler;
+import org.apache.synapse.commons.handlers.Protocol;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.util.RequestUtils;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.RESTUtil;
 import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
+import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.ProtocolState;
+import org.apache.synapse.transport.passthru.SourceContext;
+import org.apache.synapse.transport.passthru.SourceResponse;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
+import org.apache.synapse.transport.passthru.util.SourceResponseFactory;
+import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
+import org.wso2.transport.http.netty.message.HttpCarbonRequest;
+import org.wso2.transport.http.netty.message.HttpCarbonResponse;
+import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Objects;
 import javax.xml.parsers.FactoryConfigurationError;
 
 import static org.apache.synapse.transport.netty.BridgeConstants.CONTENT_TYPE_HEADER;
@@ -72,33 +93,45 @@ public class HttpRequestWorker implements Runnable {
     private TransportInDescription transportInDescription;
     private HttpGetRequestProcessor httpGetRequestProcessor;
     private org.apache.axis2.context.MessageContext msgCtx = null;
+    private List<MessagingHandler> messagingHandlers;
 
     public HttpRequestWorker(HttpCarbonMessage incomingCarbonMsg, ConfigurationContext configurationContext,
-                             TransportInDescription transportInDescription) {
+                             TransportInDescription transportInDescription, List<MessagingHandler> messagingHandlers) {
 
         this.configurationContext = configurationContext;
         this.incomingCarbonMsg = incomingCarbonMsg;
         this.transportInDescription = transportInDescription;
+        this.messagingHandlers = messagingHandlers;
 
         msgCtx = RequestUtils.convertCarbonMsgToAxis2MsgCtx(configurationContext, incomingCarbonMsg);
 
-
-        Parameter param = transportInDescription.getParameter(NhttpConstants.HTTP_GET_PROCESSOR);
-        if (param != null && param.getValue() != null) {
-            httpGetRequestProcessor = RequestUtils.createHttpGetProcessor(param.getValue().toString());
-            if (httpGetRequestProcessor == null) {
-                RequestUtils.handleException("Cannot create HttpGetRequestProcessor");
-            }
-            try {
-                httpGetRequestProcessor.init(configurationContext, null);
-            } catch (AxisFault axisFault) {
-                RequestUtils.handleException("Error while initializing httpGetRequestProcessor");
-            }
+        String httpGetProcessor = "org.wso2.micro.integrator.transport.handlers.PassThroughNHttpGetProcessor";
+        httpGetRequestProcessor = RequestUtils.createHttpGetProcessor(httpGetProcessor);
+        if (httpGetRequestProcessor == null) {
+            RequestUtils.handleException("Cannot create HttpGetRequestProcessor");
+        }
+        try {
+            httpGetRequestProcessor.init(configurationContext, null);
+        } catch (AxisFault axisFault) {
+            RequestUtils.handleException("Error while initializing httpGetRequestProcessor");
         }
     }
 
     @Override
     public void run() {
+
+        if (Objects.nonNull(messagingHandlers) && !messagingHandlers.isEmpty()) {
+            for (MessagingHandler handler: messagingHandlers) {
+                HandlerResponseDTO response = handler.invokeAtSourceRequestReceiving(msgCtx, Protocol.HTTP);
+                if (Objects.nonNull(response) && response.isError()) {
+                    if (response.isCloseConnection()) {
+
+                    } else {
+
+                    }
+                }
+            }
+        }
 
         processHttpRequestUri(msgCtx);
         if (isRequestToFetchWSDL(msgCtx)) {
@@ -118,6 +151,8 @@ public class HttpRequestWorker implements Runnable {
             SOAPEnvelope soapEnvelope = this.handleRESTUrlPost(contentTypeHeader, msgCtx);
             processNonEntityEnclosingRESTHandler(soapEnvelope, msgCtx, true);
         }
+
+        sendAck(msgCtx);
 
 //        populateProperties(msgCtx);
 //        try {
@@ -313,11 +348,10 @@ public class HttpRequestWorker implements Runnable {
                 AxisEngine.receive(msgContext);
             }
         } catch (AxisFault axisFault) {
-            RequestUtils.handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
+            handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
                     " request for : " + incomingCarbonMsg.getProperty("TO"), axisFault);
         } catch (Exception e) {
-            RequestUtils.handleException(
-                    "Error processing " + incomingCarbonMsg.getHttpMethod() + " request for : "
+            handleException("Error processing " + incomingCarbonMsg.getHttpMethod() + " request for : "
                             + incomingCarbonMsg.getProperty("TO") + ". Error detail: " + e.getMessage() + ". ", e);
         }
     }
@@ -349,11 +383,11 @@ public class HttpRequestWorker implements Runnable {
                 AxisEngine.receive(msgContext);
             }
         } catch (AxisFault axisFault) {
-            RequestUtils.handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
+            handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
                     " request for : " + incomingCarbonMsg.getProperty("TO"), axisFault);
         } catch (Exception e) {
             String encodedURL = StringEscapeUtils.escapeHtml((String) incomingCarbonMsg.getProperty("TO"));
-            RequestUtils.handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
                     + " request for : " + encodedURL + ". ", e);
         }
     }
@@ -368,6 +402,71 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setServerSide(true);
         msgContext.setDoingREST(true);
         return true;
+    }
+
+    public  void sendAck(MessageContext msgContext) {
+        String respWritten = "";
+        if (msgContext.getOperationContext() != null) {
+            respWritten = (String) msgContext.getOperationContext().getProperty(
+                    Constants.RESPONSE_WRITTEN);
+        }
+
+        if (msgContext.getProperty(PassThroughConstants.FORCE_SOAP_FAULT) != null) {
+            respWritten = "SKIP";
+        }
+
+        boolean respWillFollow = !Constants.VALUE_TRUE.equals(respWritten)
+                && !"SKIP".equals(respWritten);
+        boolean ack = (((RequestResponseTransport) msgContext.getProperty(
+                RequestResponseTransport.TRANSPORT_CONTROL)).getStatus()
+                == RequestResponseTransport.RequestResponseTransportStatus.ACKED);
+        boolean forced = msgContext.isPropertyTrue(NhttpConstants.FORCE_SC_ACCEPTED);
+        boolean nioAck = msgContext.isPropertyTrue("NIO-ACK-Requested", false);
+        if (respWillFollow || ack || forced || nioAck) {
+            HttpCarbonMessage clientRequest =
+                    (HttpCarbonRequest) msgCtx.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
+
+            HttpCarbonMessage outboundResponse = new HttpCarbonMessage(
+                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.INTERNAL_SERVER_ERROR));
+            outboundResponse.setHeader(HTTP.CONTENT_TYPE, "text/html");
+            outboundResponse.setHttpStatusCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+
+            if (!nioAck) {
+                msgContext.removeProperty(MessageContext.TRANSPORT_HEADERS);
+                outboundResponse = new HttpCarbonMessage(
+                        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.ACCEPTED));
+                outboundResponse.setHttpStatusCode(HttpStatus.SC_ACCEPTED);
+
+            } else {
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("Sending ACK response with status "
+                            + msgContext.getProperty(NhttpConstants.HTTP_SC)
+                            + ", for MessageID : " + msgContext.getMessageID());
+                }
+
+                int statusCode = Integer.parseInt(msgContext.getProperty(NhttpConstants.HTTP_SC).toString());
+
+                outboundResponse = new HttpCarbonMessage(
+                        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(statusCode)));
+                outboundResponse.setHttpStatusCode(statusCode);
+            }
+
+            final HttpMessageDataStreamer httpMessageDataStreamer =
+                    RequestUtils.getHttpMessageDataStreamer(outboundResponse);
+            OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+            try {
+                outputStream.write(new byte[0]);
+                outputStream.close();
+            } catch (IOException e) {
+                // TODO: check if we can ignore this
+            }
+
+            try {
+                clientRequest.respond(outboundResponse);
+            } catch (ServerConnectorException serverConnectorException) {
+                LOGGER.error("Error occurred while submitting the response to the client");
+            }
+        }
     }
 
     private String inferContentType() {
@@ -478,7 +577,7 @@ public class HttpRequestWorker implements Runnable {
                     msgContext.setAxisService(axisService);
                 }
             } catch (AxisFault e) {
-                RequestUtils.handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+                handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
                         + " request for : " + incomingCarbonMsg.getProperty("TO"), e);
             }
 
@@ -491,5 +590,62 @@ public class HttpRequestWorker implements Runnable {
             msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
         }
         return soapEnvelope;
+    }
+
+    private void handleException(String msg, Exception e) {
+        if (e == null) {
+            LOGGER.error(msg);
+            e = new Exception(msg);
+        } else {
+            LOGGER.error(msg, e);
+        }
+
+        try {
+            //TODO: check if need to consume and discard the remaining input in the http carbon message
+            MessageContext faultContext = MessageContextBuilder.createFaultMessageContext(msgCtx, e);
+            msgCtx.setProperty(PassThroughConstants.FORCE_SOAP_FAULT, Boolean.TRUE);
+            AxisEngine.sendFault(faultContext);
+
+        } catch (Exception ex) {
+            HttpCarbonMessage clientRequest =
+                    (HttpCarbonRequest) msgCtx.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
+
+            HttpCarbonMessage outboundResponse = new HttpCarbonMessage(
+                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.INTERNAL_SERVER_ERROR));
+            outboundResponse.setHeader(HTTP.CONTENT_TYPE, "text/html");
+            outboundResponse.setHttpStatusCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Sending ACK response with status " + msgCtx.getProperty(NhttpConstants.HTTP_SC)
+                        + ", for MessageID : " + msgCtx.getMessageID());
+            }
+            HttpMessageDataStreamer httpMessageDataStreamer =
+                    RequestUtils.getHttpMessageDataStreamer(outboundResponse);
+            OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+
+            try {
+                String body = "<html><body><h1>"
+                        + "Failed to process the request" + "</h1><p>" + msg
+                        + "</p>";
+                if (e != null) {
+                    body = body + "<p>" + msg + "</p></body></html>";
+                }
+                if (ex != null) {
+                    body = body + "<p>" + ex.getMessage()
+                            + "</p></body></html>";
+                }
+                outputStream.write(body.getBytes());
+                outputStream.flush();
+                outputStream.close();
+            } catch (Exception ignore) {
+                // ignore
+            }
+
+            try {
+                clientRequest.respond(outboundResponse);
+            } catch (ServerConnectorException serverConnectorException) {
+                LOGGER.error("Error occurred while submitting the response to the client");
+            }
+        }
     }
 }

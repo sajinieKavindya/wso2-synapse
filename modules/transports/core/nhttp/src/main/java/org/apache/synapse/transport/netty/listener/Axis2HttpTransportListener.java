@@ -29,6 +29,8 @@ import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.axis2.transport.base.threads.WorkerPoolFactory;
 import org.apache.log4j.Logger;
+import org.apache.synapse.commons.handlers.HandlerExecutor;
+import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contract.ServerConnector;
@@ -38,6 +40,7 @@ import org.wso2.transport.http.netty.contract.config.ServerBootstrapConfiguratio
 import org.wso2.transport.http.netty.contractimpl.DefaultHttpWsConnectorFactory;
 
 import java.util.HashMap;
+import java.util.List;
 
 /**
  * {@code Axis2HttpTransportListener} is the Axis2 Transport Listener implementation for HTTP transport.
@@ -45,41 +48,59 @@ import java.util.HashMap;
  */
 public class Axis2HttpTransportListener implements TransportListener {
 
+    private List<MessagingHandler> messagingHandlers;
+
     private static final Logger LOG = Logger.getLogger(Axis2HttpTransportListener.class);
+
+    private ServerConnector serverConnector;
+
+    private TransportInDescription transportInDescription;
+
+    private ConfigurationContext configurationContext;
+
+    private WorkerPool workerPool;
+
+    public Axis2HttpTransportListener() {}
+
+    public Axis2HttpTransportListener(List<MessagingHandler> messagingHandlers) {
+        this.messagingHandlers = messagingHandlers;
+    }
 
     @Override
     public void init(ConfigurationContext configurationContext, TransportInDescription transportInDescription) {
 
-        WorkerPool workerPool = WorkerPoolFactory.getWorkerPool(BridgeConstants.DEFAULT_WORKER_POOL_SIZE_CORE,
+        this.configurationContext = configurationContext;
+        this.transportInDescription = transportInDescription;
+        workerPool = WorkerPoolFactory.getWorkerPool(BridgeConstants.DEFAULT_WORKER_POOL_SIZE_CORE,
                 BridgeConstants.DEFAULT_WORKER_POOL_SIZE_MAX,
                 BridgeConstants.DEFAULT_WORKER_THREAD_KEEPALIVE_SEC,
                 BridgeConstants.DEFAULT_WORKER_POOL_QUEUE_LENGTH,
                 BridgeConstants.HTTP_WORKER_THREAD_GROUP_NAME,
                 BridgeConstants.HTTP_WORKER_THREAD_ID);
 
-        HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
-
         ListenerConfiguration listenerConfiguration = new ListenerConfiguration();
-//        listenerConfiguration.setHttpTraceLogEnabled(true);
-//        listenerConfiguration.setHttpAccessLogEnabled(true);
         Parameter portParam = transportInDescription.getParameter("port");
         int port = Integer.parseInt(portParam.getValue().toString());
         listenerConfiguration.setPort(port);
         listenerConfiguration.setHost("localhost");
-        ServerConnector serverConnector = httpWsConnectorFactory
+
+        HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
+        this.serverConnector = httpWsConnectorFactory
                 .createServerConnector(new ServerBootstrapConfiguration(new HashMap<>()), listenerConfiguration);
+    }
+
+    @Override
+    public void start() {
         ServerConnectorFuture serverConnectorFuture = serverConnector.start();
         serverConnectorFuture.setHttpConnectorListener(
-                new PassThroughHttpConnectorListener(configurationContext, workerPool, transportInDescription));
+                new PassThroughHttpConnectorListener(configurationContext, workerPool,
+                        transportInDescription, messagingHandlers));
+        serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
         try {
             serverConnectorFuture.sync();
         } catch (InterruptedException e) {
             LOG.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "Interrupted while waiting for server connector to start", e);
         }
-    }
-
-    @Override
-    public void start() {
     }
 
     @Override

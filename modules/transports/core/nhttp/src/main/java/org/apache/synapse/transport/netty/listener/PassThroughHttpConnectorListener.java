@@ -22,9 +22,13 @@ import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.log4j.Logger;
+import org.apache.synapse.commons.handlers.HandlerExecutor;
+import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.wso2.transport.http.netty.contract.HttpConnectorListener;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
+
+import java.util.List;
 
 /**
  * {@code ConnectorListenerToAxisBridge} receives the {@code HttpCarbonMessage} coming from the Netty HTTP transport,
@@ -38,18 +42,22 @@ public class PassThroughHttpConnectorListener implements HttpConnectorListener {
     private ConfigurationContext configurationContext;
     private WorkerPool workerPool;
     private TransportInDescription transportInDescription;
+    private List<MessagingHandler> messagingHandlers;
 
     public PassThroughHttpConnectorListener(ConfigurationContext configurationContext, WorkerPool workerPool,
-                                            TransportInDescription transportInDescription) {
+                                            TransportInDescription transportInDescription,
+                                            List<MessagingHandler> messagingHandlers) {
         this.configurationContext = configurationContext;
         this.workerPool = workerPool;
         this.transportInDescription = transportInDescription;
+        this.messagingHandlers = messagingHandlers;
     }
 
     public void onMessage(HttpCarbonMessage httpCarbonMessage) {
         LOG.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Message received to HTTP transport, submitting a worker to " +
                 "the pool to process");
-        workerPool.execute(new HttpRequestWorker(httpCarbonMessage, configurationContext, transportInDescription));
+        workerPool.execute(new HttpRequestWorker(httpCarbonMessage, configurationContext, transportInDescription,
+                messagingHandlers));
     }
 
     public void onError(Throwable throwable) {

@@ -21,7 +21,6 @@ package org.apache.synapse.transport.netty.util;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -36,31 +35,26 @@ import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.description.Parameter;
 import org.apache.axis2.transport.MessageFormatter;
+import org.apache.axis2.transport.RequestResponseTransport;
 import org.apache.axis2.transport.TransportUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
-import org.apache.http.HttpRequest;
-import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.sender.SourceResponse;
+import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.MessageFormatterDecoratorFactory;
 import org.apache.synapse.transport.nhttp.util.NhttpUtil;
 import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
-import org.apache.synapse.transport.passthru.SourceContext;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
-import org.apache.synapse.transport.passthru.config.SourceConfiguration;
 import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
-import org.wso2.transport.http.netty.contract.config.ChunkConfig;
-import org.wso2.transport.http.netty.message.BlockingEntityCollector;
-import org.wso2.transport.http.netty.message.EntityCollector;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
@@ -72,22 +66,21 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 
 /**
  * {@code RequestUtils} contains utilities used in request message flow.
  */
 public class RequestUtils {
+
     private static final Logger LOG = Logger.getLogger(RequestUtils.class);
 
     public static MessageContext convertCarbonMsgToAxis2MsgCtx(ConfigurationContext axis2ConfigurationCtx,
                                                                HttpCarbonMessage incomingCarbonMsg) {
+
         MessageContext msgCtx = new MessageContext();
         msgCtx.setMessageID(UIDGenerator.generateURNString());
-        msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING,
-                Boolean.FALSE);
+        msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING, Boolean.FALSE);
         msgCtx.setConfigurationContext(axis2ConfigurationCtx);
 
         // TODO: Check the validity of this block
@@ -120,6 +113,9 @@ public class RequestUtils {
 
         // TODO: check what TRANSPORT_CONTROL property does
 
+        msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL,
+                new HttpCoreRequestResponseTransport(msgCtx));
+
         // Set the original incoming carbon message as a property
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, incomingCarbonMsg);
         msgCtx.setProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE, incomingCarbonMsg);
@@ -127,6 +123,7 @@ public class RequestUtils {
     }
 
     public static HttpCarbonMessage convertAxis2MsgCtxToCarbonMsg(MessageContext msgCtx) {
+
         boolean isRequest = isRequest(msgCtx);
         Object httpMethodProperty = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
 
@@ -163,18 +160,21 @@ public class RequestUtils {
     }
 
     public static HttpCarbonMessage createOutboundHttpResponseCarbonMsg() {
+
         HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(
                 new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
         return outboundHttpCarbonMessage;
     }
 
     public static HttpCarbonMessage createOutboundHttpRequestCarbonMsg(HttpMethod httpMethod) {
+
         HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(
                 new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
         return outboundHttpCarbonMessage;
     }
 
     public static HttpCarbonMessage createOutboundCarbonMsg(HttpCarbonMessage inboundCarbonMsg, MessageContext msgCtx) {
+
         boolean isRequest = isRequest(msgCtx);
         HttpMethod httpMethod = null;
         if (msgCtx.getProperty(BridgeConstants.HTTP_METHOD) != null) {
@@ -185,7 +185,6 @@ public class RequestUtils {
         }
 
         HttpCarbonMessage outboundHttpCarbonMessage;
-
 
         if (isRequest) {
             // Request
@@ -198,7 +197,6 @@ public class RequestUtils {
             outboundHttpCarbonMessage = new HttpCarbonMessage(
                     new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
         }
-
 
         Map<String, String> headers = (Map<String, String>) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
 
@@ -214,7 +212,7 @@ public class RequestUtils {
     }
 
     public static HttpCarbonMessage createOutboundResponse(HttpCarbonMessage inboundCarbonMsg,
-                                              MessageContext msgContext) throws AxisFault {
+                                                           MessageContext msgContext) throws AxisFault {
         // set http version
         HttpVersion version = determineHttpVersion(msgContext);
 
@@ -222,19 +220,10 @@ public class RequestUtils {
         int statusCode = determineHttpStatusCode(msgContext);
 
         // set status line
-        String statusLine = determineHttpStatusLine(msgContext);
-
-        Object originalHttpResponsePhraseProperty =
-                msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE);
-        Object originalHttpStatusCodeProperty = msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC);
-        if ((Objects.isNull(originalHttpStatusCodeProperty) || statusCode != ((Integer) originalHttpStatusCodeProperty))
-                && Objects.nonNull(originalHttpResponsePhraseProperty)
-                && originalHttpResponsePhraseProperty.equals(statusLine)) {
-            // make the statusLine null so that the proper status code will be by the Netty server.
-            statusLine = null;
-        }
+        String statusLine = determineHttpStatusLine(msgContext, statusCode);
 
         SourceResponse sourceResponse = new SourceResponse(version, statusCode, statusLine);
+        Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
 
         // set any transport headers
         Map transportHeaders = (Map) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
@@ -256,19 +245,16 @@ public class RequestUtils {
                     }
                 }
             }
-        } else {
-            Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
-            if (noEntityBody == null || Boolean.FALSE == noEntityBody) {
-                OMOutputFormat format = NhttpUtil.getOMOutputFormat(msgContext);
-                transportHeaders = new HashMap();
-                MessageFormatter messageFormatter =
-                        MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgContext);
-                if (Objects.isNull(msgContext.getProperty(Constants.Configuration.MESSAGE_TYPE))
-                        && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)
-                        && Objects.nonNull(messageFormatter)) {
-                    transportHeaders.put(HTTP.CONTENT_TYPE,
-                            messageFormatter.getContentType(msgContext, format, msgContext.getSoapAction()));
-                }
+        } else if (noEntityBody == null || Boolean.FALSE == noEntityBody) {
+            OMOutputFormat format = NhttpUtil.getOMOutputFormat(msgContext);
+            transportHeaders = new HashMap();
+            MessageFormatter messageFormatter =
+                    MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgContext);
+            if (Objects.isNull(msgContext.getProperty(Constants.Configuration.MESSAGE_TYPE))
+                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)
+                    && Objects.nonNull(messageFormatter)) {
+                transportHeaders.put(HTTP.CONTENT_TYPE,
+                        messageFormatter.getContentType(msgContext, format, msgContext.getSoapAction()));
             }
         }
 
@@ -341,7 +327,8 @@ public class RequestUtils {
             sourceResponse.addHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
         }
 
-        if (Boolean.TRUE.equals(msgContext.isPropertyTrue(PassThroughConstants.MESSAGE_BUILDER_INVOKED))) {
+        if (!Boolean.TRUE.equals(msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY))
+                && Boolean.TRUE.equals(msgContext.isPropertyTrue(PassThroughConstants.MESSAGE_BUILDER_INVOKED))) {
 
             if (Constants.VALUE_TRUE.equals(msgContext.getProperty(Constants.Configuration.ENABLE_MTOM)) ||
                     Constants.VALUE_TRUE.equals(msgContext.getProperty(Constants.Configuration.ENABLE_SWA))) {
@@ -366,12 +353,14 @@ public class RequestUtils {
     }
 
     private static boolean isPayloadOptionalMethod(String httpMethod) {
+
         return (PassThroughConstants.HTTP_GET.equals(httpMethod) ||
                 PassThroughConstants.HTTP_HEAD.equals(httpMethod) ||
                 PassThroughConstants.HTTP_DELETE.equals(httpMethod));
     }
 
     private static boolean canResponseHaveBody(final String httpMethod, final int statusCode) {
+
         if ("HEAD".equalsIgnoreCase(httpMethod)) {
             return false;
         }
@@ -382,6 +371,7 @@ public class RequestUtils {
     }
 
     private static void addTransportHeadersToResponse(SourceResponse sourceResponse, Map transportHeaders) {
+
         if (transportHeaders != null) {
             for (Object entryObj : transportHeaders.entrySet()) {
                 Map.Entry entry = (Map.Entry) entryObj;
@@ -394,8 +384,9 @@ public class RequestUtils {
     }
 
     private static void addExcessHeadersToResponse(SourceResponse sourceResponse, Map excessHeaders) {
+
         if (excessHeaders != null) {
-            for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext();) {
+            for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext(); ) {
                 String key = (String) iterator.next();
                 for (String excessVal : (Collection<String>) excessHeaders.get(key)) {
                     sourceResponse.addHeader(key, (String) excessVal);
@@ -404,18 +395,15 @@ public class RequestUtils {
         }
     }
 
-
     /**
      * Determine the Http Status Code depending on the message type processed <br>
      * (normal response versus fault response) as well as Axis2 message context properties set
      * via Synapse configuration or MessageBuilders.
      *
+     * @param msgContext the Axis2 message context
+     * @return the HTTP status code to set in the HTTP response object
      * @see PassThroughConstants#FAULTS_AS_HTTP_200
      * @see PassThroughConstants#HTTP_SC
-     *
-     * @param msgContext the Axis2 message context
-     *
-     * @return the HTTP status code to set in the HTTP response object
      */
     public static int determineHttpStatusCode(MessageContext msgContext) {
 
@@ -466,22 +454,33 @@ public class RequestUtils {
      * (normal response versus fault response) as well as Axis2 message context properties set
      * via Synapse configuration or MessageBuilders.
      *
+     * @param msgContext the Axis2 message context
+     * @return the HTTP status message string or null
      * @see PassThroughConstants#FAULTS_AS_HTTP_200
      * @see PassThroughConstants#HTTP_SC
-     *
-     * @param msgContext the Axis2 message context
-     *
-     * @return the HTTP status message string or null
      */
-    public static String determineHttpStatusLine(MessageContext msgContext) {
-        Object statusLine = msgContext.getProperty(PassThroughConstants.HTTP_SC_DESC);
-        if (statusLine != null) {
-            return (String) statusLine;
+    public static String determineHttpStatusLine(MessageContext msgContext, int statusCode) {
+
+        String statusLine = null;
+        Object statusLineProperty = msgContext.getProperty(PassThroughConstants.HTTP_SC_DESC);
+        if (statusLineProperty != null) {
+            statusLine = (String) statusLineProperty;
         }
-        return null;
+
+        Object originalHttpReasonPhraseProperty =
+                msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE);
+        Object originalHttpStatusCodeProperty = msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC);
+        if ((Objects.isNull(originalHttpStatusCodeProperty) || statusCode != ((Integer) originalHttpStatusCodeProperty))
+                && Objects.nonNull(originalHttpReasonPhraseProperty)
+                && originalHttpReasonPhraseProperty.equals(statusLine)) {
+            // make the statusLine null so that the proper status code will be by the Netty server.
+            statusLine = null;
+        }
+        return statusLine;
     }
 
     public static HttpVersion determineHttpVersion(MessageContext msgContext) {
+
         HttpVersion version = HttpVersion.HTTP_1_1;   //TODO: check this validity
         String forceHttp10 = (String) msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
         if (Constants.VALUE_TRUE.equals(forceHttp10)) {
@@ -492,6 +491,7 @@ public class RequestUtils {
 
     public static void setContentLengthHeader(MessageContext msgContext, String httpMethod,
                                               SourceResponse sourceResponse) throws IOException {
+
         boolean forceContentLength = msgContext.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH);
         boolean forceContentLengthCopy =
                 msgContext.isPropertyTrue(PassThroughConstants.COPY_CONTENT_LENGTH_FROM_INCOMING);
@@ -527,6 +527,7 @@ public class RequestUtils {
      * @return true if response can have Content-Length header else false
      */
     private static boolean canResponseHaveContentLength(MessageContext responseMsgContext, String httpMethod) {
+
         Object httpStatus = responseMsgContext.getProperty(PassThroughConstants.HTTP_SC);
         int status;
         if (httpStatus == null || httpStatus.toString().equals("")) {
@@ -546,11 +547,13 @@ public class RequestUtils {
 
     /**
      * Calculates the content-length when chunking is disabled.
+     *
      * @param responseMsgContext outflow message context
      * @throws IOException
      */
     private static void calculateContentLengthForChunkDisabledResponse(
             MessageContext responseMsgContext, SourceResponse sourceResponse) throws IOException {
+
         String forceHttp10 = (String) responseMsgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
         boolean isChunkingDisabled = responseMsgContext.isPropertyTrue(PassThroughConstants.DISABLE_CHUNKING, false);
 
@@ -590,13 +593,14 @@ public class RequestUtils {
     /**
      * Set content type headers along with the charactor encoding if content type header is not preserved.
      *
-     * @param msgContext    message context
-     * @param sourceResponse    source response
-     * @param formatter response formatter
-     * @param format    response format
+     * @param msgContext     message context
+     * @param sourceResponse source response
+     * @param formatter      response formatter
+     * @param format         response format
      */
     public static void setContentType(MessageContext msgContext, SourceResponse sourceResponse, MessageFormatter formatter,
-                               OMOutputFormat format) {
+                                      OMOutputFormat format) {
+
         if (DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
             return;
         }
@@ -630,12 +634,12 @@ public class RequestUtils {
         if (!isContentTypeSetFromMsgCtx) {
             sourceResponse.removeHeader(HTTP.CONTENT_TYPE);
             sourceResponse.addHeader(HTTP.CONTENT_TYPE,
-                    formatter.getContentType(
-                            msgContext, format, msgContext.getSoapAction()));
+                    formatter.getContentType(msgContext, format, msgContext.getSoapAction()));
         }
     }
 
-    private static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundRequestMsg) {
+    public static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundRequestMsg) {
+
         final HttpMessageDataStreamer outboundMsgDataStreamer;
         final PooledDataStreamerFactory pooledDataStreamerFactory = (PooledDataStreamerFactory)
                 outboundRequestMsg.getProperty(BridgeConstants.POOLED_BYTE_BUFFER_FACTORY);
@@ -654,6 +658,7 @@ public class RequestUtils {
      * @return true if Content-Type is related to Soap.
      */
     private static boolean isSOAPContentType(String contentType) {
+
         return contentType != null &&
                 (contentType.indexOf(SOAP11Constants.SOAP_11_CONTENT_TYPE) != -1 ||
                         contentType.indexOf(SOAP12Constants.SOAP_12_CONTENT_TYPE) != -1);
@@ -667,6 +672,7 @@ public class RequestUtils {
      * @param msgContext the Axis2 Message context from which these headers should be removed
      */
     public static void removeUnwantedHeaders(MessageContext msgContext) {
+
         Map transportHeaders = (Map) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
         Map excessHeaders = (Map) msgContext.getProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS);
 
@@ -688,9 +694,10 @@ public class RequestUtils {
     /**
      * Remove unwanted headers from the given header map.
      *
-     * @param headers  http header map
+     * @param headers http header map
      */
     private static void removeUnwantedHeadersFromHeaderMap(Map headers) {
+
         Iterator iter = headers.keySet().iterator();
         while (iter.hasNext()) {
             String headerName = (String) iter.next();
@@ -761,7 +768,7 @@ public class RequestUtils {
                 return contentType;
             } else {
                 return new SOAPMessageFormatter().getContentType(
-                        msgCtx, format,  msgCtx.getSoapAction());
+                        msgCtx, format, msgCtx.getSoapAction());
             }
         }
     }
@@ -773,6 +780,7 @@ public class RequestUtils {
      * @return true for multipart content types
      */
     public static boolean isMultipartContent(String contentType) {
+
         if (contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
                 || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED)) {
             return true;
@@ -783,6 +791,7 @@ public class RequestUtils {
     // If the HTTP method is GET or DELETE with no body, we need to write down the HEADER information to the wire
     // and need to ignore any entity enclosed methods available.
     public static boolean ignoreMessageBody(MessageContext msgContext) {
+
         if (HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty(Constants.Configuration.HTTP_METHOD)) ||
                 RelayUtils.isDeleteRequestWithoutPayload(msgContext)) {
             return true;
@@ -799,7 +808,7 @@ public class RequestUtils {
                     contextServicePath.length());
             // discard [proxy] service name if any
             int pos = uri.indexOf("/", 1);
-           if (pos > 0) {
+            if (pos > 0) {
                 uri = uri.substring(pos);
             } else {
                 pos = uri.indexOf("?");
@@ -848,6 +857,7 @@ public class RequestUtils {
     }
 
     public static boolean isRESTRequest(String contentType) {
+
         return contentType != null &&
                 (contentType.contains("application/xml") ||
                         contentType.contains("application/x-www-form-urlencoded") ||
@@ -857,12 +867,14 @@ public class RequestUtils {
     }
 
     public static boolean isRest(String contentType) {
+
         return contentType != null &&
                 !contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE) &&
                 !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE);
     }
 
     public static int populateSOAPVersion(MessageContext msgContext, String soapActionHeader, String contentType) {
+
         int soapVersion = 0;
         if (contentType != null) {
             if (contentType.contains("application/soap+xml")) {
@@ -885,14 +897,15 @@ public class RequestUtils {
         return soapVersion;
     }
 
-
     private static boolean isRequest(MessageContext msgCtx) {
+
         EndpointReference epr = getDestinationEPR(msgCtx);
         return epr != null;
     }
 
     /**
      * Get the EPR for the message passed in.
+     *
      * @param msgContext the message context
      * @return the destination EPR
      */
@@ -912,6 +925,7 @@ public class RequestUtils {
     }
 
     public static HttpGetRequestProcessor createHttpGetProcessor(String str) {
+
         Object obj = null;
         try {
             obj = Class.forName(str).newInstance();
@@ -934,11 +948,13 @@ public class RequestUtils {
     }
 
     public static void handleException(String msg, Exception e) {
+
         LOG.error(msg, e);
 //        throw new AxisFault(msg, e);
     }
 
     public static void handleException(String msg) {
+
         LOG.error(msg);
 //        throw new AxisFault(msg);
     }

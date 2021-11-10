@@ -18,6 +18,8 @@
  */
 package org.apache.synapse.transport.netty.sender;
 
+import io.netty.buffer.Unpooled;
+import io.netty.handler.codec.http.DefaultHttpContent;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -130,11 +132,11 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 
         HttpCarbonMessage originalCarbonMessage =
                 (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-        if (originalCarbonMessage == null) {
-            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Carbon Message not found, " +
-                    "sending requests originated from non HTTP transport is not supported yet");
-            return InvocationResponse.ABORT;
-        }
+//        if (originalCarbonMessage == null) {
+//            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Carbon Message not found, " +
+//                    "sending requests originated from non HTTP transport is not supported yet");
+//            return InvocationResponse.ABORT;
+//        }
 
         RequestUtils.removeUnwantedHeaders(msgCtx);
 
@@ -157,22 +159,14 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 handleException("IOException found", e);
             }
         } else { // Response submission back to the client
+            if (originalCarbonMessage == null) {
+                LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Carbon Message not found, " +
+                        "sending requests originated from non HTTP transport is not supported yet");
+                return InvocationResponse.ABORT;
+            }
             sendBack(msgCtx, originalCarbonMessage);
         }
         return InvocationResponse.CONTINUE;
-    }
-
-    private HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundRequestMsg) {
-
-        final HttpMessageDataStreamer outboundMsgDataStreamer;
-        final PooledDataStreamerFactory pooledDataStreamerFactory = (PooledDataStreamerFactory)
-                outboundRequestMsg.getProperty(BridgeConstants.POOLED_BYTE_BUFFER_FACTORY);
-        if (pooledDataStreamerFactory != null) {
-            outboundMsgDataStreamer = pooledDataStreamerFactory.createHttpDataStreamer(outboundRequestMsg);
-        } else {
-            outboundMsgDataStreamer = new HttpMessageDataStreamer(outboundRequestMsg);
-        }
-        return outboundMsgDataStreamer;
     }
 
     // response submission back to the client (client <-- transport)
@@ -209,40 +203,47 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
         }
 
-        HttpCarbonMessage outboundResponseCarbonMessage = RequestUtils.createOutboundResponse(inboundCarbonMessage, msgCtx);
+        HttpCarbonMessage outboundResponseCarbonMessage =
+                RequestUtils.createOutboundResponse(inboundCarbonMessage, msgCtx);
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundResponseCarbonMessage);
 
         try {
-
-
-            if (Boolean.TRUE.equals((msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED)))) {
-                final HttpMessageDataStreamer httpMessageDataStreamer =
-                        getHttpMessageDataStreamer(outboundResponseCarbonMessage);
-                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
-                OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
-                try {
-                    MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
-                    messageFormatter.writeTo(msgCtx, format, outputStream, false);
-                } catch (AxisFault axisFault) {
-                    LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
-                } finally {
+            clientRequest.respond(outboundResponseCarbonMessage);
+            // TODO: check if we need to write empty http content at some point
+            if (!Boolean.TRUE.equals(msgCtx.getProperty(NhttpConstants.NO_ENTITY_BODY))) {
+                if (Boolean.TRUE.equals((msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED)))) {
+                    final HttpMessageDataStreamer httpMessageDataStreamer =
+                            RequestUtils.getHttpMessageDataStreamer(outboundResponseCarbonMessage);
+                    OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+                    OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
                     try {
-                        outputStream.close();
-                    } catch (IOException e) {
-                        LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + e.getMessage());
+                        MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
+                        messageFormatter.writeTo(msgCtx, format, outputStream, false);
+                    } catch (AxisFault axisFault) {
+                        LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
+                    } finally {
+                        try {
+                            outputStream.close();
+                        } catch (IOException e) {
+                            LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + e.getMessage());
+                        }
                     }
+                } else {
+                    do {
+                        HttpContent httpContent = inboundCarbonMessage.getHttpContent();
+                        outboundResponseCarbonMessage.addHttpContent(httpContent);
+                        if (httpContent instanceof LastHttpContent) {
+                            break;
+                        }
+                    } while (true);
                 }
             } else {
-                do {
-                    HttpContent httpContent = inboundCarbonMessage.getHttpContent();
-                    outboundResponseCarbonMessage.addHttpContent(httpContent);
-                    if (httpContent instanceof LastHttpContent) {
-                        break;
-                    }
-                } while (true);
+                final HttpMessageDataStreamer httpMessageDataStreamer =
+                        RequestUtils.getHttpMessageDataStreamer(outboundResponseCarbonMessage);
+                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+                outputStream.write(new byte[0]);
+                outputStream.close();
             }
-
-            clientRequest.respond(outboundResponseCarbonMessage);
         } catch (Exception e) {
             LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error occurred while submitting the response " +
                     "back to the client", e);
@@ -289,8 +290,9 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
             outboundHttpCarbonMessage.setKeepAlive(false);
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.NEVER);
-            // TODO: check if the header needs to be set separately
-//            request.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
+            // TODO: when connection is closed the server throws an error as below. Is this behavior correct?
+            // [2021-11-06 10:48:31,701] ERROR {org.apache.synapse.transport.netty.sender.PassThroughHttpOutboundRespListener} - [Bridge] Error while processing the response java.io.IOException: Broken pipe
+            // ERROR {org.wso2.transport.http.netty.contractimpl.sender.states.SendingEntityBody} - Error in HTTP client: Remote host closed the connection while writing outbound request entity body
         } else {
             outboundHttpCarbonMessage.setKeepAlive(true);
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
@@ -337,7 +339,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         // serialize
         if (Boolean.TRUE.equals(msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
             final HttpMessageDataStreamer outboundMsgDataStreamer =
-                    getHttpMessageDataStreamer(outboundHttpCarbonMessage);
+                    RequestUtils.getHttpMessageDataStreamer(outboundHttpCarbonMessage);
             final OutputStream outputStream = outboundMsgDataStreamer.getOutputStream();
             OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
             try {
@@ -353,6 +355,14 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 }
             }
         } else {
+            if (inboundCarbonMessage == null) {
+                final HttpMessageDataStreamer httpMessageDataStreamer =
+                        RequestUtils.getHttpMessageDataStreamer(outboundHttpCarbonMessage);
+                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+                outputStream.write(new byte[0]);
+                outputStream.close();
+                return;
+            }
             do {
                 HttpContent httpContent = inboundCarbonMessage.getHttpContent();
                 outboundHttpCarbonMessage.addHttpContent(httpContent);
