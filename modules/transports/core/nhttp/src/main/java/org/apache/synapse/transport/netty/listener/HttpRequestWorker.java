@@ -18,9 +18,7 @@
  */
 package org.apache.synapse.transport.netty.listener;
 
-import io.netty.buffer.Unpooled;
 import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.DefaultLastHttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
@@ -48,28 +46,21 @@ import org.apache.axis2.transport.http.HTTPTransportUtils;
 import org.apache.axis2.util.MessageContextBuilder;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.http.HttpStatus;
-import org.apache.http.nio.NHttpServerConnection;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
-import org.apache.synapse.commons.handlers.HandlerResponseDTO;
+import org.apache.synapse.commons.handlers.HandlerResponse;
 import org.apache.synapse.commons.handlers.MessagingHandler;
-import org.apache.synapse.commons.handlers.Protocol;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.util.RequestUtils;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.RESTUtil;
 import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.ProtocolState;
-import org.apache.synapse.transport.passthru.SourceContext;
-import org.apache.synapse.transport.passthru.SourceResponse;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
-import org.apache.synapse.transport.passthru.util.SourceResponseFactory;
 import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpCarbonRequest;
-import org.wso2.transport.http.netty.message.HttpCarbonResponse;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 
 import java.io.IOException;
@@ -122,7 +113,7 @@ public class HttpRequestWorker implements Runnable {
 
         if (Objects.nonNull(messagingHandlers) && !messagingHandlers.isEmpty()) {
             for (MessagingHandler handler: messagingHandlers) {
-                HandlerResponseDTO response = handler.invokeAtSourceRequestReceiving(msgCtx, Protocol.HTTP);
+                HandlerResponse response = handler.handleSourceRequest(msgCtx);
                 if (Objects.nonNull(response) && response.isError()) {
                     if (response.isCloseConnection()) {
 

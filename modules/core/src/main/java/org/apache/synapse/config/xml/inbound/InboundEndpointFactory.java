@@ -28,6 +28,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.SynapseConstants;
 import org.apache.synapse.SynapseException;
 import org.apache.synapse.aspects.AspectConfiguration;
+import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.commons.resolvers.ResolverFactory;
 import org.apache.synapse.config.SynapseConfiguration;
 import org.apache.synapse.config.xml.XMLConfigConstants;
@@ -179,7 +180,7 @@ public class InboundEndpointFactory {
 
                 try {
                     Class clazz = APIFactory.class.getClassLoader().loadClass(handlerClass);
-                    InboundEndpointHandler inboundEndpointHandler = (InboundEndpointHandler) clazz.newInstance();
+                    MessagingHandler inboundEndpointHandler = (MessagingHandler) clazz.newInstance();
                     inboundEndpoint.addHandler(inboundEndpointHandler);
                 } catch (Exception e) {
                     String errorMsg = "Error initializing Inbound Endpoint handler: " + handlerClass;

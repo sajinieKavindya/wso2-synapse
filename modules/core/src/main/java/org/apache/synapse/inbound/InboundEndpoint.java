@@ -27,6 +27,7 @@ import org.apache.synapse.aspects.AspectConfiguration;
 import org.apache.synapse.aspects.ComponentType;
 import org.apache.synapse.aspects.flow.statistics.StatisticIdentityGenerator;
 import org.apache.synapse.aspects.flow.statistics.data.artifact.ArtifactHolder;
+import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.core.SynapseEnvironment;
 import org.apache.synapse.mediators.Value;
 import org.apache.synapse.util.xpath.SynapseXPath;
@@ -57,7 +58,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private String onErrorSeq;
     private Map<String, String> parametersMap = new LinkedHashMap<String, String>();
     private Map<String, String> parameterKeyMap = new LinkedHashMap<String, String>();
-    private List<InboundEndpointHandler> handlers = new ArrayList();
+    private List<MessagingHandler> handlers = new ArrayList();
     private String fileName;
     private SynapseEnvironment synapseEnvironment;
     private InboundRequestProcessor inboundRequestProcessor;
@@ -141,6 +142,10 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         //replacing values by secure vault
         resolveVaultExpressions(props);
         inboundProcessorParams.setProperties(props);
+
+        for (MessagingHandler handler: handlers) {
+            inboundProcessorParams.addHandler(handler);
+        }
         return inboundProcessorParams;
     }
 
@@ -325,12 +330,12 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
 
     }
 
-    public List<InboundEndpointHandler> getHandlers() {
+    public List<MessagingHandler> getHandlers() {
 
         return handlers;
     }
 
-    public void addHandler(InboundEndpointHandler handler) {
+    public void addHandler(MessagingHandler handler) {
 
         this.handlers.add(handler);
     }

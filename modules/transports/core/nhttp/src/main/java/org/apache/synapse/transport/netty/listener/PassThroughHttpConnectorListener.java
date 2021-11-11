@@ -22,7 +22,6 @@ import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.log4j.Logger;
-import org.apache.synapse.commons.handlers.HandlerExecutor;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.wso2.transport.http.netty.contract.HttpConnectorListener;
