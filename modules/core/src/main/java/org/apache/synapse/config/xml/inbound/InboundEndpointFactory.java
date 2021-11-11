@@ -28,6 +28,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.SynapseConstants;
 import org.apache.synapse.SynapseException;
 import org.apache.synapse.aspects.AspectConfiguration;
+import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.commons.resolvers.ResolverFactory;
 import org.apache.synapse.config.SynapseConfiguration;
 import org.apache.synapse.config.xml.XMLConfigConstants;
@@ -158,6 +159,34 @@ public class InboundEndpointFactory {
                 }
             }
         }
+
+        // Set Inbound Endpoint Handlers
+        OMElement handlersElt = inboundEndpointElem.getFirstChildWithName(
+                new QName(XMLConfigConstants.SYNAPSE_NAMESPACE,
+                        InboundEndpointConstants.INBOUND_ENDPOINT_HANDLERS));
+        if (handlersElt != null) {
+            Iterator handlers =
+                    handlersElt.getChildrenWithName(
+                            new QName(XMLConfigConstants.SYNAPSE_NAMESPACE,
+                                    InboundEndpointConstants.INBOUND_ENDPOINT_HANDLER));
+
+            while (handlers.hasNext()) {
+                OMElement handler = (OMElement) handlers.next();
+                String handlerClass = handler.getAttributeValue(new QName(
+                        InboundEndpointConstants.INBOUND_ENDPOINT_CLASS));
+
+                try {
+                    Class clazz = InboundEndpointFactory.class.getClassLoader().loadClass(handlerClass);
+                    MessagingHandler inboundEndpointHandler = (MessagingHandler) clazz.newInstance();
+                    inboundEndpoint.addHandler(inboundEndpointHandler);
+                } catch (Exception e) {
+                    String errorMsg = "Error initializing Inbound Endpoint handler: " + handlerClass;
+                    log.error(errorMsg, e);
+                    throw new SynapseException(errorMsg, e);
+                }
+            }
+        }
+
         inboundEndpoint.setFileName(inboundEndpointElem.getAttributeValue(new QName(InboundEndpointConstants.INBOUND_ENDPOINT_NAME))+".xml");
         return inboundEndpoint;
     }
