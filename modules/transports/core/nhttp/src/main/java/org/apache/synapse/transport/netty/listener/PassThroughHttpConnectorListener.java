@@ -18,49 +18,39 @@
  */
 package org.apache.synapse.transport.netty.listener;
 
-import org.apache.axis2.context.ConfigurationContext;
-import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.log4j.Logger;
-import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.wso2.transport.http.netty.contract.HttpConnectorListener;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
-import java.util.List;
 
 /**
  * {@code ConnectorListenerToAxisBridge} receives the {@code HttpCarbonMessage} coming from the Netty HTTP transport,
  * converts them to {@code MessageContext} and finally deliver them to the axis engine.
- *
  */
 public class PassThroughHttpConnectorListener implements HttpConnectorListener {
 
-    private static final Logger LOG = Logger.getLogger(PassThroughHttpConnectorListener.class);
+    private static final Logger LOGGER = Logger.getLogger(PassThroughHttpConnectorListener.class);
 
-    private ConfigurationContext configurationContext;
-    private WorkerPool workerPool;
-    private TransportInDescription transportInDescription;
-    private List<MessagingHandler> messagingHandlers;
+    private final SourceConfiguration sourceConfiguration;
 
-    public PassThroughHttpConnectorListener(ConfigurationContext configurationContext, WorkerPool workerPool,
-                                            TransportInDescription transportInDescription,
-                                            List<MessagingHandler> messagingHandlers) {
-        this.configurationContext = configurationContext;
-        this.workerPool = workerPool;
-        this.transportInDescription = transportInDescription;
-        this.messagingHandlers = messagingHandlers;
+    public PassThroughHttpConnectorListener(SourceConfiguration sourceConfiguration) {
+
+        this.sourceConfiguration = sourceConfiguration;
     }
 
     public void onMessage(HttpCarbonMessage httpCarbonMessage) {
-        LOG.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Message received to HTTP transport, submitting a worker to " +
-                "the pool to process");
-        workerPool.execute(new HttpRequestWorker(httpCarbonMessage, configurationContext, transportInDescription,
-                messagingHandlers));
+
+        LOGGER.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Message received to HTTP transport, submitting "
+                + "a worker to the pool to process");
+        WorkerPool workerPool = sourceConfiguration.getWorkerPool();
+        workerPool.execute(new HttpRequestWorker(httpCarbonMessage, sourceConfiguration));
     }
 
     public void onError(Throwable throwable) {
+        LOGGER.warn("Error in HTTP server connector: {}", throwable);
     }
-
 
 }

@@ -1,0 +1,160 @@
+/*
+ *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ *  WSO2 Inc. licenses this file to you under the Apache License,
+ *  Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing,
+ *  software distributed under the License is distributed on an
+ *  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ *  KIND, either express or implied.  See the License for the
+ *  specific language governing permissions and limitations
+ *  under the License.
+ *
+ */
+package org.apache.synapse.transport.netty.config;
+
+import org.apache.axis2.AxisFault;
+import org.apache.axis2.context.ConfigurationContext;
+import org.apache.axis2.description.Parameter;
+import org.apache.axis2.description.TransportInDescription;
+import org.apache.axis2.transport.TransportListener;
+import org.apache.axis2.transport.base.ParamUtils;
+import org.apache.axis2.transport.base.threads.WorkerPool;
+import org.apache.log4j.Logger;
+import org.apache.synapse.commons.handlers.MessagingHandler;
+import org.apache.synapse.transport.http.conn.Scheme;
+import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
+
+import java.net.UnknownHostException;
+import java.util.List;
+
+public class SourceConfiguration extends BaseConfiguration {
+
+    private static final Logger LOGGER = Logger.getLogger(SourceConfiguration.class);
+
+    /** port of the listener */
+    private int port;
+    /** hostname of the listener */
+    private String host;
+    private Scheme scheme;
+
+    private final TransportInDescription inDescription;
+
+    /** WSDL processor for Get requests*/
+    private HttpGetRequestProcessor httpGetRequestProcessor = null;
+
+    private List<MessagingHandler> messagingHandlers;
+
+    public SourceConfiguration(ConfigurationContext configurationContext, TransportInDescription inDescription,
+                               Scheme scheme, List<MessagingHandler> messagingHandlers) {
+        this(configurationContext, inDescription, scheme, messagingHandlers, null);
+    }
+
+    public SourceConfiguration(ConfigurationContext configurationContext, TransportInDescription inDescription,
+                               Scheme scheme, List<MessagingHandler> messagingHandlers, WorkerPool workerPool) {
+        super(configurationContext, workerPool);
+        this.inDescription = inDescription;
+        this.scheme = scheme;
+        this.messagingHandlers = messagingHandlers;
+    }
+
+    public void build() throws AxisFault {
+        super.build();
+        port = ParamUtils.getRequiredParamInt(inDescription, TransportListener.PARAM_PORT);
+
+        Parameter hostParameter = inDescription.getParameter(TransportListener.HOST_ADDRESS);
+        if (hostParameter != null) {
+            host = ((String) hostParameter.getValue()).trim();
+        } else {
+            try {
+                host = java.net.InetAddress.getLocalHost().getHostName();
+            } catch (UnknownHostException e) {
+                LOGGER.warn("Unable to lookup local host name. Hence, using 'localhost'");
+            }
+        }
+
+        String httpGetRequestProcessorClass = conf.getHttpGetRequestProcessorClass();
+        httpGetRequestProcessor = createHttpGetProcessor(httpGetRequestProcessorClass);
+        if (httpGetRequestProcessor == null) {
+            handleException("Cannot create HttpGetRequestProcessor");
+        }
+
+    }
+
+    private HttpGetRequestProcessor createHttpGetProcessor(String clss) throws AxisFault {
+        Object obj = null;
+        try {
+            obj = Class.forName(clss).newInstance();
+        } catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
+            handleException("Error creating WSDL processor", e);
+        }
+
+        if (obj instanceof HttpGetRequestProcessor) {
+            return (HttpGetRequestProcessor) obj;
+        } else {
+            handleException("Error creating WSDL processor. The http GET request processor should be of type "
+                    + "org.apache.synapse.transport.passthru.HttpGetRequestProcessor");
+        }
+        return null;
+    }
+
+    private void handleException(String msg, Exception e) throws AxisFault {
+        LOGGER.error(msg, e);
+        throw new AxisFault(msg, e);
+    }
+
+    private void handleException(String msg) throws AxisFault {
+        LOGGER.error(msg);
+        throw new AxisFault(msg);
+    }
+
+    public int getPort() {
+
+        return port;
+    }
+
+    public void setPort(int port) {
+
+        this.port = port;
+    }
+
+    public String getHost() {
+
+        return host;
+    }
+
+    public void setHost(String host) {
+
+        this.host = host;
+    }
+
+    public Scheme getScheme() {
+
+        return scheme;
+    }
+
+    public void setScheme(Scheme scheme) {
+
+        this.scheme = scheme;
+    }
+
+    public HttpGetRequestProcessor getHttpGetRequestProcessor() {
+
+        return httpGetRequestProcessor;
+    }
+
+    public List<MessagingHandler> getMessagingHandlers() {
+
+        return messagingHandlers;
+    }
+
+    public void setMessagingHandlers(List<MessagingHandler> messagingHandlers) {
+
+        this.messagingHandlers = messagingHandlers;
+    }
+}

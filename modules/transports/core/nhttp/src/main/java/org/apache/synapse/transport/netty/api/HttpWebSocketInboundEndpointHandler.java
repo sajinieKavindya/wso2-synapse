@@ -21,11 +21,13 @@ import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
+import org.apache.axis2.description.TransportOutDescription;
 import org.apache.axis2.transport.TransportListener;
 import org.apache.http.nio.NHttpServerEventHandler;
 import org.apache.log4j.Logger;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.listener.Axis2HttpTransportListener;
+import org.apache.synapse.transport.netty.sender.Axis2HttpTransportSender;
 import org.apache.synapse.transport.passthru.core.PassThroughListeningIOReactorManager;
 import org.apache.synapse.transport.passthru.core.ssl.SSLConfiguration;
 
@@ -52,24 +54,38 @@ public class HttpWebSocketInboundEndpointHandler {
      */
     public static boolean startEndpoint(InetSocketAddress inetSocketAddress, ConfigurationContext configurationContext,
                                      List<MessagingHandler> messagingHandlers, String endpointName) {
+
+        TransportListener transportListener = new Axis2HttpTransportListener(messagingHandlers);
         TransportInDescription transportInDescription = new TransportInDescription("http");
+        transportInDescription.setReceiver(transportListener);
+        TransportOutDescription transportOutDescription = new TransportOutDescription("http");
+        transportOutDescription.setSender(new Axis2HttpTransportSender(messagingHandlers));
+
         try {
+            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
+            configurationContext.getAxisConfiguration().addTransportOut(transportOutDescription);
             Parameter parameter = new Parameter();
             parameter.setName("port");
             parameter.setValue(inetSocketAddress.getPort());
             transportInDescription.addParameter(parameter);
 
-            TransportListener transportListener = new Axis2HttpTransportListener(messagingHandlers);
             transportListener.init(configurationContext, transportInDescription);
-            transportListener.start();
-            return true;
-
         } catch (AxisFault e) {
-            LOGGER.error("Exception occurred while starting the " + transportInDescription.getName()
+            LOGGER.error("Couldn't initialize the " + transportInDescription.getName()
                     + " transport listener for endpoint : " + endpointName + " on port "
                     + inetSocketAddress.getPort(), e);
+            return false;
         }
-        return false;
+
+        try {
+            transportListener.start();
+        } catch (AxisFault e) {
+            LOGGER.error("Couldn't start the " + transportInDescription.getName()
+                    + " transport listener for endpoint : " + endpointName + " on port " +
+                    + inetSocketAddress.getPort(), e);
+            return false;
+        }
+        return true;
     }
 
     /**

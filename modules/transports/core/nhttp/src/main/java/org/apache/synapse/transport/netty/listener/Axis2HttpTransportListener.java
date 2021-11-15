@@ -23,14 +23,13 @@ import org.apache.axis2.addressing.EndpointReference;
 import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.context.SessionContext;
-import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.TransportListener;
-import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.axis2.transport.base.threads.WorkerPoolFactory;
 import org.apache.log4j.Logger;
 import org.apache.synapse.commons.handlers.MessagingHandler;
+import org.apache.synapse.transport.http.conn.Scheme;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contract.ServerConnector;
 import org.wso2.transport.http.netty.contract.ServerConnectorFuture;
@@ -47,17 +46,11 @@ import java.util.List;
  */
 public class Axis2HttpTransportListener implements TransportListener {
 
-    private List<MessagingHandler> messagingHandlers;
-
     private static final Logger LOG = Logger.getLogger(Axis2HttpTransportListener.class);
 
     private ServerConnector serverConnector;
-
-    private TransportInDescription transportInDescription;
-
-    private ConfigurationContext configurationContext;
-
-    private WorkerPool workerPool;
+    private SourceConfiguration sourceConfiguration = null;
+    private List<MessagingHandler> messagingHandlers;
 
     public Axis2HttpTransportListener() {}
 
@@ -66,22 +59,20 @@ public class Axis2HttpTransportListener implements TransportListener {
     }
 
     @Override
-    public void init(ConfigurationContext configurationContext, TransportInDescription transportInDescription) {
+    public void init(ConfigurationContext configurationContext, TransportInDescription transportInDescription)
+            throws AxisFault {
 
-        this.configurationContext = configurationContext;
-        this.transportInDescription = transportInDescription;
-        workerPool = WorkerPoolFactory.getWorkerPool(BridgeConstants.DEFAULT_WORKER_POOL_SIZE_CORE,
-                BridgeConstants.DEFAULT_WORKER_POOL_SIZE_MAX,
-                BridgeConstants.DEFAULT_WORKER_THREAD_KEEPALIVE_SEC,
-                BridgeConstants.DEFAULT_WORKER_POOL_QUEUE_LENGTH,
-                BridgeConstants.HTTP_WORKER_THREAD_GROUP_NAME,
-                BridgeConstants.HTTP_WORKER_THREAD_ID);
+        sourceConfiguration = new SourceConfiguration(configurationContext, transportInDescription,
+                new Scheme("http", 80, false), messagingHandlers);
+        sourceConfiguration.build();
+
+        if (sourceConfiguration.getHttpGetRequestProcessor() != null) {
+            sourceConfiguration.getHttpGetRequestProcessor().init(sourceConfiguration.getConfigurationContext(), null);
+        }
 
         ListenerConfiguration listenerConfiguration = new ListenerConfiguration();
-        Parameter portParam = transportInDescription.getParameter("port");
-        int port = Integer.parseInt(portParam.getValue().toString());
-        listenerConfiguration.setPort(port);
-        listenerConfiguration.setHost("localhost");
+        listenerConfiguration.setPort(sourceConfiguration.getPort());
+        listenerConfiguration.setHost(sourceConfiguration.getHost());
 
         HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
         this.serverConnector = httpWsConnectorFactory
@@ -92,8 +83,7 @@ public class Axis2HttpTransportListener implements TransportListener {
     public void start() {
         ServerConnectorFuture serverConnectorFuture = serverConnector.start();
         serverConnectorFuture.setHttpConnectorListener(
-                new PassThroughHttpConnectorListener(configurationContext, workerPool,
-                        transportInDescription, messagingHandlers));
+                new PassThroughHttpConnectorListener(sourceConfiguration));
         serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
         try {
             serverConnectorFuture.sync();

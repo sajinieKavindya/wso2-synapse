@@ -40,10 +40,12 @@ import org.apache.axis2.transport.TransportUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
+import org.apache.commons.collections.map.MultiValueMap;
 import org.apache.http.HttpStatus;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.apache.synapse.transport.netty.sender.SourceResponse;
 import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
@@ -71,33 +73,40 @@ import java.util.TreeMap;
 /**
  * {@code RequestUtils} contains utilities used in request message flow.
  */
-public class RequestUtils {
+public class RequestResponseUtils {
 
-    private static final Logger LOG = Logger.getLogger(RequestUtils.class);
+    private static final Logger LOGGER = Logger.getLogger(RequestResponseUtils.class);
 
-    public static MessageContext convertCarbonMsgToAxis2MsgCtx(ConfigurationContext axis2ConfigurationCtx,
-                                                               HttpCarbonMessage incomingCarbonMsg) {
+    /**
+     * Create an Axis2 message context for the given HttpCarbonMessage. The carbon message may be in the
+     * process of being streamed.
+     *
+     * @param incomingCarbonMsg the http carbon message to be used to create the corresponding Axis2 message context
+     * @param sourceConfiguration description of the incoming transport
+     * @return the Axis2 message context created
+     */
+    public static MessageContext convertCarbonMsgToAxis2MsgCtx(HttpCarbonMessage incomingCarbonMsg,
+                                                               SourceConfiguration sourceConfiguration) {
 
         MessageContext msgCtx = new MessageContext();
+
+        //TODO: once the correlation id support is brought, the correlationID should be set as the messageID.
+        // Refer to https://github.com/wso2-support/wso2-synapse/commit/2c86e14151d48ae3bb814be19b874800bd7468e5
         msgCtx.setMessageID(UIDGenerator.generateURNString());
         msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING, Boolean.FALSE);
-        msgCtx.setConfigurationContext(axis2ConfigurationCtx);
+        ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
+        msgCtx.setConfigurationContext(configurationContext);
 
-        // TODO: Check the validity of this block
-        msgCtx.setTransportOut(axis2ConfigurationCtx.getAxisConfiguration()
-                .getTransportOut(Constants.TRANSPORT_HTTP));
-        msgCtx.setTransportIn(axis2ConfigurationCtx.getAxisConfiguration()
-                .getTransportIn(Constants.TRANSPORT_HTTP));
+        msgCtx.setTransportOut(configurationContext.getAxisConfiguration().getTransportOut(Constants.TRANSPORT_HTTP));
+        msgCtx.setTransportIn(configurationContext.getAxisConfiguration().getTransportIn(Constants.TRANSPORT_HTTP));
         msgCtx.setIncomingTransportName(Constants.TRANSPORT_HTTP);
 
-        //TODO: propagate correlation logging related properties
-        //TODO: propagate transaction property
-
+        //TODO: set correlation id
+        //TODO: set transaction id
         //TODO: SSL check
 
         msgCtx.setServerSide(true);
-        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL,
-                incomingCarbonMsg.getProperty("TO"));
+        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, incomingCarbonMsg.getProperty("TO"));
 
         // Following section is required for throttling to work
         msgCtx.setProperty(MessageContext.REMOTE_ADDR, incomingCarbonMsg.getProperty(
@@ -107,14 +116,18 @@ public class RequestUtils {
 
         // http transport header names are case insensitive
         Map<String, String> headers = new TreeMap<>(String::compareToIgnoreCase);
-        incomingCarbonMsg.getHeaders().forEach(entry -> headers.put(entry.getKey(), entry.getValue()));
+        Map excessHeaders = new MultiValueMap();
+        incomingCarbonMsg.getHeaders().forEach(entry -> {
+            if (headers.containsKey(entry.getKey())) {
+                excessHeaders.put(entry.getKey(), entry.getValue());
+            } else {
+                headers.put(entry.getKey(), entry.getValue());
+            }
+        });
         msgCtx.setProperty(MessageContext.TRANSPORT_HEADERS, headers);
-        //TODO: check setting of EXCESS_TRANSPORT_HEADERS property
+        msgCtx.setProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS, excessHeaders);
 
-        // TODO: check what TRANSPORT_CONTROL property does
-
-        msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL,
-                new HttpCoreRequestResponseTransport(msgCtx));
+        msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL, new HttpCoreRequestResponseTransport(msgCtx));
 
         // Set the original incoming carbon message as a property
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, incomingCarbonMsg);
@@ -128,20 +141,20 @@ public class RequestUtils {
         Object httpMethodProperty = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
 
         if (Objects.isNull(httpMethodProperty)) {
-            LOG.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
+            LOGGER.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
             isRequest = false;
         }
 
         HttpCarbonMessage outboundHttpCarbonMessage;
         if (isRequest) {
             // Request
-            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
+            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
             HttpMethod httpMethod = new HttpMethod((String) httpMethodProperty);
             outboundHttpCarbonMessage = new HttpCarbonMessage(
                     new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
         } else {
             // Response
-            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
+            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
             outboundHttpCarbonMessage = new HttpCarbonMessage(
                     new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
         }
@@ -159,20 +172,6 @@ public class RequestUtils {
         return outboundHttpCarbonMessage;
     }
 
-    public static HttpCarbonMessage createOutboundHttpResponseCarbonMsg() {
-
-        HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(
-                new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
-        return outboundHttpCarbonMessage;
-    }
-
-    public static HttpCarbonMessage createOutboundHttpRequestCarbonMsg(HttpMethod httpMethod) {
-
-        HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(
-                new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
-        return outboundHttpCarbonMessage;
-    }
-
     public static HttpCarbonMessage createOutboundCarbonMsg(HttpCarbonMessage inboundCarbonMsg, MessageContext msgCtx) {
 
         boolean isRequest = isRequest(msgCtx);
@@ -180,7 +179,7 @@ public class RequestUtils {
         if (msgCtx.getProperty(BridgeConstants.HTTP_METHOD) != null) {
             httpMethod = new HttpMethod((String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD));
         } else {
-            LOG.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
+            LOGGER.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
             isRequest = false;
         }
 
@@ -188,12 +187,12 @@ public class RequestUtils {
 
         if (isRequest) {
             // Request
-            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
+            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
             outboundHttpCarbonMessage = new HttpCarbonMessage(
                     new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
         } else {
             // Response
-            LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
+            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
             outboundHttpCarbonMessage = new HttpCarbonMessage(
                     new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
         }
@@ -279,7 +278,7 @@ public class RequestUtils {
             setContentLengthHeader(msgContext, inboundCarbonMsg.getHttpMethod(), sourceResponse);
         } catch (IOException e) {
             String msg = "Failed to submit the response";
-            LOG.error(msg, e);
+            LOGGER.error(msg, e);
             throw new AxisFault(msg, e);
         }
 
@@ -317,8 +316,8 @@ public class RequestUtils {
             // If the payload is delayed for GET/HEAD/DELETE, http-core-nio will start processing request, without
             // waiting for the payload. Therefore the delayed payload will be appended to the next request. To avoid
             // that, disable keep-alive to avoid re-using the existing connection by client for the next request.
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Disable keep-alive in the client connection : Content-length/Transfer-encoding " +
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Disable keep-alive in the client connection : Content-length/Transfer-encoding " +
                         "headers present for GET/HEAD/DELETE request");
             }
             keepAlive = false;
@@ -426,7 +425,7 @@ public class RequestUtils {
                             msgContext.getProperty(PassThroughConstants.HTTP_SC).toString());
                     return httpStatus;
                 } catch (NumberFormatException e) {
-                    LOG.warn("Unable to set the HTTP status code from the property "
+                    LOGGER.warn("Unable to set the HTTP status code from the property "
                             + PassThroughConstants.HTTP_SC + " with value: " + statusCode);
                 }
             }
@@ -949,13 +948,13 @@ public class RequestUtils {
 
     public static void handleException(String msg, Exception e) {
 
-        LOG.error(msg, e);
+        LOGGER.error(msg, e);
 //        throw new AxisFault(msg, e);
     }
 
     public static void handleException(String msg) {
 
-        LOG.error(msg);
+        LOGGER.error(msg);
 //        throw new AxisFault(msg);
     }
 
