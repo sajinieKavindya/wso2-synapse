@@ -63,6 +63,8 @@ import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -791,11 +793,8 @@ public class RequestResponseUtils {
     // and need to ignore any entity enclosed methods available.
     public static boolean ignoreMessageBody(MessageContext msgContext) {
 
-        if (HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty(Constants.Configuration.HTTP_METHOD)) ||
-                RelayUtils.isDeleteRequestWithoutPayload(msgContext)) {
-            return true;
-        }
-        return false;
+        return HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty(Constants.Configuration.HTTP_METHOD))
+                || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
     }
 
     public static String getRestUrlPostfix(String uri, String servicePath) {
@@ -923,6 +922,19 @@ public class RequestResponseUtils {
         return null;
     }
 
+    private URL getDestinationURL(MessageContext msgContext) throws AxisFault {
+
+        EndpointReference endpointReference = getDestinationEPR(msgContext);
+        if (Objects.isNull(endpointReference)) {
+            return null;
+        }
+        try {
+            return new URL(endpointReference.getAddress());
+        } catch (MalformedURLException e) {
+            throw new AxisFault("Malformed Endpoint url found in the target EPR", e);
+        }
+    }
+
     public static void handleException(String msg, Exception e) {
 
         LOGGER.error(msg, e);
@@ -958,6 +970,18 @@ public class RequestResponseUtils {
                     outboundHttpCarbonMessage.setHeader(key, (String) excessVal);
                 }
             }
+        }
+    }
+
+    public static boolean enableChunking(MessageContext msgContext) {
+
+        if (msgContext.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH)) {
+            return false;
+        } else {
+            String disableChunking = (String) msgContext.getProperty(PassThroughConstants.DISABLE_CHUNKING);
+            return !Constants.VALUE_TRUE.equals(disableChunking)
+                    && !Constants.VALUE_TRUE.equals((String)
+                    msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0));
         }
     }
 }

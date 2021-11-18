@@ -38,7 +38,6 @@ import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.netty.util.MessageUtils;
 import org.apache.synapse.transport.netty.util.RequestResponseUtils;
-import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.caching.CachingConstants;
@@ -63,7 +62,6 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import javax.xml.stream.XMLStreamException;
 
 /**
@@ -106,17 +104,12 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     @Override
     public InvocationResponse invoke(MessageContext msgCtx) throws AxisFault {
 
-        Boolean noEntityBody = (Boolean) msgCtx.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-
-        // check if only the second condition is enough to set the message_builder_invoked property true
-        if ((Objects.isNull(noEntityBody) || !noEntityBody)
-                && msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+        // Consider a non HTTP transport to HTTP transport scenarios where the message is present in the envelope.
+        // In these scenarios, MESSAGE_BUILDER_INVOKED property is not set. But we need to format the message
+        // before sending out. Hence, setting MESSAGE_BUILDER_INVOKED property true.
+        if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
             msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, true);
         }
-
-        HttpCarbonMessage originalCarbonMessage =
-                (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-
         RequestResponseUtils.removeUnwantedHeaders(msgCtx);
 
         if (AddressingHelper.isReplyRedirected(msgCtx) && !msgCtx.getReplyTo().hasNoneAddress()) {
@@ -130,21 +123,18 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
             try {
                 URL destinationURL = new URL(destinationEPR.getAddress());
-                sendForward(msgCtx, originalCarbonMessage, destinationURL);
+                // Send request to the backend service.
+                sendForward(msgCtx, destinationURL);
             } catch (MalformedURLException e) {
-                handleException("Malformed Endpoint url found", e);
+                handleException("Malformed URL in the target EPR", e);
             } catch (IOException e) {
-                // TODO: this is a temporary fix. need to carefully handle the exception
-                handleException("IOException found", e);
+                handleException("Error while sending the request to the backend service "
+                        + destinationEPR.getAddress(), e);
             }
-        } else { // Response submission back to the client
-//            if (originalCarbonMessage == null) {
-//                LOG.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Carbon Message not found, " +
-//                        "sending requests originated from non HTTP transport is not supported yet");
-//                return InvocationResponse.ABORT;
-//            }
+        } else {
+            // Response submission back to the client
             try {
-                sendBack(msgCtx, originalCarbonMessage);
+                sendBack(msgCtx);
             } catch (IOException e) {
                 handleException("IOException found", e);
             }
@@ -153,7 +143,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     }
 
     // response submission back to the client (client <-- transport)
-    private void sendBack(MessageContext msgCtx, HttpCarbonMessage inboundCarbonMessage) throws IOException {
+    private void sendBack(MessageContext msgCtx) throws IOException {
         HttpCarbonRequest clientRequest =
                 (HttpCarbonRequest) msgCtx.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
         if (clientRequest == null) {
@@ -186,54 +176,13 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
         }
 
-        SourceResponse sourceResponse = new SourceResponse();
+        HttpOutboundResponse httpOutboundResponse = new HttpOutboundResponse();
         HttpCarbonMessage outboundResponseCarbonMessage =
-                sourceResponse.getOutboundResponseCarbonMessage(msgCtx, inboundCarbonMessage);
-
-//        HttpCarbonMessage outboundResponseCarbonMessage =
-//                RequestResponseUtils.createOutboundResponse(inboundCarbonMessage, msgCtx);
-//        msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundResponseCarbonMessage);
+                httpOutboundResponse.getOutboundResponseCarbonMessage(msgCtx, clientRequest);
 
         try {
             clientRequest.respond(outboundResponseCarbonMessage);
-            // TODO: check if we need to write empty http content at some point
-            // inboundCarbonMessage = null means, the final call was not initiated from http protocol
-            if (Boolean.TRUE.equals(msgCtx.getProperty(NhttpConstants.NO_ENTITY_BODY))
-                    || inboundCarbonMessage == null) {
-                final HttpMessageDataStreamer httpMessageDataStreamer =
-                        RequestResponseUtils.getHttpMessageDataStreamer(outboundResponseCarbonMessage);
-                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
-                outputStream.write(new byte[0]);
-                outputStream.close();
-                return;
-            }
-
-            if (Boolean.TRUE.equals((msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED)))) {
-                final HttpMessageDataStreamer httpMessageDataStreamer =
-                        RequestResponseUtils.getHttpMessageDataStreamer(outboundResponseCarbonMessage);
-                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
-                OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
-                try {
-                    MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
-                    messageFormatter.writeTo(msgCtx, format, outputStream, false);
-                } catch (AxisFault axisFault) {
-                    LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
-                } finally {
-                    try {
-                        outputStream.close();
-                    } catch (IOException e) {
-                        LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + e.getMessage());
-                    }
-                }
-            } else {
-                do {
-                    HttpContent httpContent = inboundCarbonMessage.getHttpContent();
-                    outboundResponseCarbonMessage.addHttpContent(httpContent);
-                    if (httpContent instanceof LastHttpContent) {
-                        break;
-                    }
-                } while (true);
-            }
+            writeEntityBody(msgCtx, outboundResponseCarbonMessage);
 
         } catch (Exception e) {
             LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error occurred while submitting the response " +
@@ -242,7 +191,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
     }
 
     // outgoing request (transport --> remote)
-    private void sendForward(MessageContext msgCtx, HttpCarbonMessage inboundCarbonMessage, URL url)
+    private void sendForward(MessageContext msgCtx, URL url)
             throws IOException {
 
         // TODO: Check if this is needed
@@ -260,49 +209,62 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 //                    (String) msgCtx.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH)));
 //        }
 
-        TargetRequest targetRequest = new TargetRequest();
-        HttpCarbonMessage outboundRequest = targetRequest.getOutboundRequestCarbonMessage(msgCtx, url);
+        HttpOutboundRequest httpOutboundRequest = new HttpOutboundRequest(msgCtx, url);
+        HttpCarbonMessage outboundCarbonRequest = httpOutboundRequest.getOutboundCarbonRequest();
+
+        SenderConfiguration senderConfiguration = createSenderConfiguration(httpOutboundRequest);
+        HttpClientConnector clientConnector = httpWsConnectorFactory
+                .createHttpClientConnector(new HashMap<>(), senderConfiguration, connectionManager);
+
+        HttpResponseFuture future = clientConnector.send(outboundCarbonRequest);
+        future.setHttpConnectorListener(new PassThroughHttpInboundRespListener(workerPool, msgCtx,
+                targetConfiguration));
+
+        if (RequestResponseUtils.ignoreMessageBody(msgCtx)) {
+            writeEmptyBody(outboundCarbonRequest);
+        }
+        writeEntityBody(msgCtx, outboundCarbonRequest);
+    }
+
+    private SenderConfiguration createSenderConfiguration(HttpOutboundRequest httpOutboundRequest) {
 
         SenderConfiguration senderConfiguration = new SenderConfiguration();
-        senderConfiguration.setHttpVersion(targetRequest.getHttpVersion());
-        if (targetRequest.isChunk()) {
+        senderConfiguration.setHttpVersion(httpOutboundRequest.getHttpVersion());
+        if (httpOutboundRequest.isChunk()) {
             senderConfiguration.setChunkingConfig(ChunkConfig.ALWAYS);
         } else {
             senderConfiguration.setChunkingConfig(ChunkConfig.NEVER);
         }
 
-        if (targetRequest.isKeepAlive()) {
+        if (httpOutboundRequest.isKeepAlive()) {
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
         } else {
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.NEVER);
         }
+        return senderConfiguration;
+    }
 
-        HttpClientConnector clientConnector = httpWsConnectorFactory
-                .createHttpClientConnector(new HashMap<>(), senderConfiguration, connectionManager);
-
-//        msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, outboundHttpCarbonMessage);
-        HttpResponseFuture future = clientConnector.send(outboundRequest);
-        future.setHttpConnectorListener(new PassThroughHttpOutboundRespListener(workerPool, msgCtx));
-
-        // TODO: Check HTTP method is GET or DELETE with no body
-        if (RequestResponseUtils.ignoreMessageBody(msgCtx)) {
-            final HttpMessageDataStreamer httpMessageDataStreamer =
-                    RequestResponseUtils.getHttpMessageDataStreamer(outboundRequest);
-            OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+    private void writeEmptyBody(HttpCarbonMessage outboundCarbonMessage) throws AxisFault {
+        final HttpMessageDataStreamer httpMessageDataStreamer =
+                RequestResponseUtils.getHttpMessageDataStreamer(outboundCarbonMessage);
+        OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
+        try {
             outputStream.write(new byte[0]);
             outputStream.close();
-            return;
+        } catch (IOException e) {
+            throw new AxisFault("Error while writing the entity body to the http CarbonMessage");
         }
+    }
 
-        // serialize
-        if (Boolean.TRUE.equals(msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
+    private void writeEntityBody(MessageContext msgContext, HttpCarbonMessage outboundCarbonMessage) throws AxisFault {
+        if (Boolean.TRUE.equals(msgContext.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
             final HttpMessageDataStreamer outboundMsgDataStreamer =
-                    RequestResponseUtils.getHttpMessageDataStreamer(outboundRequest);
+                    RequestResponseUtils.getHttpMessageDataStreamer(outboundCarbonMessage);
             final OutputStream outputStream = outboundMsgDataStreamer.getOutputStream();
-            OMOutputFormat format = MessageUtils.getOMOutputFormat(msgCtx);
+            OMOutputFormat format = MessageUtils.getOMOutputFormat(msgContext);
             try {
-                MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
-                messageFormatter.writeTo(msgCtx, format, outputStream, false);
+                MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgContext);
+                messageFormatter.writeTo(msgContext, format, outputStream, false);
             } catch (AxisFault axisFault) {
                 LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
             } finally {
@@ -313,22 +275,19 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 }
             }
         } else {
-            // the inbound carbon message is null when the call is initiated from the server itself.
-            // For example, a Task that inject to a proxy service will have no http carbon message.
+            HttpCarbonMessage inboundCarbonMessage =
+                    (HttpCarbonMessage) msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
+            // the inbound carbon message is null when the call is initiated from non-http transport.
             // In these cases, either payload can be empty or available in the envelope in the message context.
             // If the message context has an empty envelope and if the inbound carbon message is null, we need to
             // write an empty body to the backend.
             if (inboundCarbonMessage == null) {
-                final HttpMessageDataStreamer httpMessageDataStreamer =
-                        RequestResponseUtils.getHttpMessageDataStreamer(outboundRequest);
-                OutputStream outputStream = httpMessageDataStreamer.getOutputStream();
-                outputStream.write(new byte[0]);
-                outputStream.close();
+                writeEmptyBody(outboundCarbonMessage);
                 return;
             }
             do {
                 HttpContent httpContent = inboundCarbonMessage.getHttpContent();
-                outboundRequest.addHttpContent(httpContent);
+                outboundCarbonMessage.addHttpContent(httpContent);
                 if (httpContent instanceof LastHttpContent) {
                     break;
                 }

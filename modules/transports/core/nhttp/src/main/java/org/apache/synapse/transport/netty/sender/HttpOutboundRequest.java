@@ -45,20 +45,18 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.Collection;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 
 /**
  * This class represents the Outbound Http request.
  */
-public class TargetRequest {
+public class HttpOutboundRequest {
 
     /**
      * Keep alive request.
      */
-    private boolean keepAlive = true;
+    private boolean keepAlive;
     /**
      * Weather chunk encoding should be used.
      */
@@ -66,65 +64,79 @@ public class TargetRequest {
 
     private String httpVersion;
 
-    HttpCarbonMessage outboundRequest;
+    private String httpMethod;
 
-    public HttpCarbonMessage getOutboundRequestCarbonMessage(MessageContext msgCtx, URL url) throws IOException {
-        if (Objects.isNull(outboundRequest)) {
-            outboundRequest = createOutboundRequestCarbonMessage(msgCtx, url);
-        }
-        return outboundRequest;
-    }
+    private HttpCarbonMessage httpCarbonMessage;
 
-    private HttpCarbonMessage createOutboundRequestCarbonMessage(MessageContext messageCtx, URL url) throws IOException {
-        HttpCarbonMessage outboundRequest = new HttpCarbonMessage(new DefaultHttpRequest(HttpVersion.HTTP_1_1,
+    public HttpOutboundRequest(MessageContext msgContext, URL url) throws AxisFault {
+        httpCarbonMessage = new HttpCarbonMessage(new DefaultHttpRequest(HttpVersion.HTTP_1_1,
                 HttpMethod.POST, ""));
+
+        setHTTPVersion(msgContext, httpCarbonMessage);
+        setHTTPMethod(msgContext, httpCarbonMessage);
 
         int port = getOutboundReqPort(url);
         String host = url.getHost();
-        String httpVersion = setHTTPVersion(messageCtx, outboundRequest);
-        setHTTPMethod(messageCtx, outboundRequest);
-        setOutboundReqProperties(outboundRequest, messageCtx, url, host, port);
-        setOutboundReqHeaders(outboundRequest, messageCtx, host, port);
+        try {
+            setOutboundReqHeaders(httpCarbonMessage, msgContext, host, port);
+            setOutboundReqProperties(httpCarbonMessage, msgContext, url, host, port);
+        } catch (IOException e) {
+            throw new AxisFault("Error while creating the target request", e);
+        }
 
-        // keep alive
-        String noKeepAlive = (String) messageCtx.getProperty(PassThroughConstants.NO_KEEPALIVE);
-        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
-                || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
-            keepAlive = false;
-            outboundRequest.setKeepAlive(false);
-            // TODO: when connection is closed the server throws an error as below. Is this behavior correct?
-            // [2021-11-06 10:48:31,701] ERROR {org.apache.synapse.transport.netty.sender
-            // .PassThroughHttpOutboundRespListener}-[Bridge] Error while processing the response java.io.IOException:
-            // Broken pipe
-            // ERROR {org.wso2.transport.http.netty.contractimpl.sender.states.SendingEntityBody} -
-            // Error in HTTP client: Remote host closed the connection while writing outbound request entity body
+        if (hasEntityBody(msgContext)) {
+            // no need to specifically set the chunking status in the http carbon message because transport-http
+            // will get the chunking status from the value we set in the SenderConfiguration.
+            chunk = RequestResponseUtils.enableChunking(msgContext);
         } else {
-            keepAlive = true;
-            outboundRequest.setKeepAlive(true);
+            // If the request does not have a entity body to be sent, then we need to set the following property.
+            httpCarbonMessage.setProperty(Constants.NO_ENTITY_BODY, true);
         }
-
-        if (hasEntityBody(messageCtx)) {
-            boolean forceContentLength = messageCtx.isPropertyTrue(
-                    NhttpConstants.FORCE_HTTP_CONTENT_LENGTH);
-            boolean forceContentLengthCopy = messageCtx.isPropertyTrue(
-                    PassThroughConstants.COPY_CONTENT_LENGTH_FROM_INCOMING);
-
-            if (forceContentLength) {
-                // set chunk to NEVER
-                chunk = false;
-            } else {
-                String disableChunking = (String) messageCtx.getProperty(PassThroughConstants.DISABLE_CHUNKING);
-                if (org.apache.axis2.Constants.VALUE_TRUE.equals(disableChunking)
-                        || org.apache.axis2.Constants.VALUE_TRUE.equals((String)
-                        messageCtx.getProperty(PassThroughConstants.FORCE_HTTP_1_0))) {
-                    // set chunk to NEVER
-                    chunk = false;
-                }
-            }
-        }
-
-        return outboundRequest;
     }
+
+//    public HttpCarbonMessage getOutboundRequestCarbonMessage(MessageContext msgCtx, URL url) throws IOException {
+//        if (Objects.isNull(httpCarbonMessage)) {
+//            httpCarbonMessage = createOutboundRequestCarbonMessage(msgCtx, url);
+//        }
+//        return httpCarbonMessage;
+//    }
+//
+//    private HttpCarbonMessage createOutboundRequestCarbonMessage(MessageContext msgContext, URL url)
+//            throws IOException {
+//        HttpCarbonMessage outboundRequest = new HttpCarbonMessage(new DefaultHttpRequest(HttpVersion.HTTP_1_1,
+//                HttpMethod.POST, ""));
+//
+//        outboundRequest.setHttpVersion(getHTTPVersion(msgContext));
+//        outboundRequest.setHttpMethod(getHTTPMethod(msgContext));
+//
+//        int port = getOutboundReqPort(url);
+//        String host = url.getHost();
+//        setOutboundReqProperties(outboundRequest, msgContext, url, host, port);
+//        setOutboundReqHeaders(outboundRequest, msgContext, host, port);
+//
+//        // keep alive
+////        String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
+////        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
+////                || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
+////            keepAlive = false;
+////            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
+////            // TODO: when connection is closed the server throws an error as below. Is this behavior correct?
+////            // [2021-11-06 10:48:31,701] ERROR {org.apache.synapse.transport.netty.sender
+////            // .PassThroughHttpOutboundRespListener}-[Bridge] Error while processing the response java.io.IOException:
+////            // Broken pipe
+////            // ERROR {org.wso2.transport.http.netty.contractimpl.sender.states.SendingEntityBody} -
+////            // Error in HTTP client: Remote host closed the connection while writing outbound request entity body
+////        } else {
+////            keepAlive = true;
+////            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_KEEP_ALIVE);
+////        }
+//
+//        if (hasEntityBody(msgContext)) {
+//            chunk = RequestResponseUtils.enableChunking(msgContext);
+//        }
+//
+//        return outboundRequest;
+//    }
 
     private int getOutboundReqPort(URL url) {
 
@@ -137,21 +149,19 @@ public class TargetRequest {
         return port;
     }
 
-    private String setHTTPVersion(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
-        String version;
-        String forceHttp10 = (String) msgCtx.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
+    private void setHTTPVersion(MessageContext msgContext, HttpCarbonMessage outboundRequest) {
+        String forceHttp10 = (String) msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
         if (org.apache.axis2.Constants.VALUE_TRUE.equals(forceHttp10)) {
-            version = "1.0";
+            httpVersion = "1.0";
             // need to set the version in the client connector
         } else {
-            version = "1.1";
+            httpVersion = "1.1";
         }
-        outboundRequest.setHttpVersion(version);
-        return version;
+        outboundRequest.setHttpVersion(httpVersion);
     }
 
     private void setHTTPMethod(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
-        String httpMethod = (String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
+        httpMethod = (String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
         if (Objects.isNull(httpMethod)) {
             httpMethod = HTTPConstants.HTTP_METHOD_POST;
         }
@@ -159,13 +169,18 @@ public class TargetRequest {
     }
 
     private void setOutboundReqProperties(HttpCarbonMessage outboundRequest, MessageContext msgCtx, URL url,
-                                          String host, int port) throws IOException {
+                                          String host, int port) throws AxisFault {
 
         outboundRequest.setProperty(Constants.HTTP_HOST, host);
         outboundRequest.setProperty(Constants.HTTP_PORT, port);
-        String outboundReqPath = getOutboundReqPath(url, msgCtx);
-        outboundRequest.setProperty(Constants.TO, outboundReqPath);
-        outboundRequest.setProperty(Constants.PROTOCOL, url.getProtocol() != null ? url.getProtocol() : "http");
+        try {
+            String outboundReqPath = getOutboundReqPath(url, msgCtx);
+            outboundRequest.setProperty(Constants.TO, outboundReqPath);
+            outboundRequest.setProperty(Constants.PROTOCOL, url.getProtocol() != null ? url.getProtocol() : "http");
+        } catch (IOException e) {
+            throw new AxisFault("Error occurred while getting the target request path", e);
+        }
+
     }
 
     private String getOutboundReqPath(URL url, MessageContext msgCtx) throws IOException {
@@ -207,11 +222,11 @@ public class TargetRequest {
                                        String host, int port) throws AxisFault {
 
         setHostHeader(host, port, outboundRequest, msgCtx);
-        addTransportHeaders(msgCtx, outboundRequest);
+        RequestResponseUtils.addTransportHeaders(msgCtx, outboundRequest);
+        RequestResponseUtils.addExcessHeaders(msgCtx, outboundRequest);
         setContentTypeHeaderIfApplicable(msgCtx, outboundRequest);
-        addExcessHeaders(msgCtx, outboundRequest);
-        //setup wsa action..
         setWSAActionIfApplicable(msgCtx, outboundRequest);
+        setKeepAliveHeader(msgCtx, outboundRequest);
     }
 
     private void setHostHeader(String host, int port, HttpCarbonMessage outboundRequest, MessageContext msgCtx) {
@@ -234,31 +249,6 @@ public class TargetRequest {
             headers.set(HttpHeaderNames.HOST, host);
         } else {
             headers.set(HttpHeaderNames.HOST, host + ":" + port);
-        }
-    }
-
-    public void addTransportHeaders(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
-        Map headers = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
-        if (headers != null) {
-            for (Object entryObj : headers.entrySet()) {
-                Map.Entry entry = (Map.Entry) entryObj;
-                if (entry.getValue() != null && entry.getKey() instanceof String &&
-                        entry.getValue() instanceof String) {
-                    outboundRequest.setHeader((String) entry.getKey(), (String) entry.getValue());
-                }
-            }
-        }
-    }
-
-    private static void addExcessHeaders(MessageContext msgCtx, HttpCarbonMessage outboundHttpCarbonMessage) {
-        Map excessHeaders = (Map) msgCtx.getProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS);
-        if (excessHeaders != null) {
-            for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext();) {
-                String key = (String) iterator.next();
-                for (String excessVal : (Collection<String>) excessHeaders.get(key)) {
-                    outboundHttpCarbonMessage.setHeader(key, (String) excessVal);
-                }
-            }
         }
     }
 
@@ -314,24 +304,31 @@ public class TargetRequest {
         }
     }
 
+    private void setKeepAliveHeader(MessageContext msgContext, HttpCarbonMessage outboundRequest) {
+        String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
+        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
+                || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
+            keepAlive = false;
+            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
+        } else {
+            keepAlive = true;
+            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_KEEP_ALIVE);
+        }
+    }
+
     private void setWSAActionIfApplicable(MessageContext msgCtx, HttpCarbonMessage httpCarbonMessage) {
-        //setup wsa action..
         String soapAction = msgCtx.getSoapAction();
         if (soapAction == null) {
             soapAction = msgCtx.getWSAAction();
+            //TODO: do we need this?
             msgCtx.getAxisOperation().getInputAction();
         }
 
-        if (msgCtx.isSOAP11() && soapAction != null &&
-                soapAction.length() > 0) {
-            // TODO: check if I can remove the header without checking
-            String existingHeader =
-                    httpCarbonMessage.getHeader(HTTPConstants.HEADER_SOAP_ACTION);
-            if (existingHeader != null) {
-                httpCarbonMessage.removeHeader(existingHeader);
-            }
-            MessageFormatter messageFormatter =
-                    MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
+        MessageFormatter messageFormatter =
+                MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
+        if (msgCtx.isSOAP11() && soapAction != null && soapAction.length() > 0 && Objects.nonNull(messageFormatter)) {
+            // Even if the headers is already present, no need to remove the header before adding the same header.
+            // Whenever a header is added, it will replace the similar headers.
             httpCarbonMessage.setHeader(HTTPConstants.HEADER_SOAP_ACTION,
                     messageFormatter.formatSOAPAction(msgCtx, null, soapAction));
         }
@@ -348,6 +345,9 @@ public class TargetRequest {
                 .getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED));
         boolean noEntityBodySet =
                 Boolean.TRUE.equals(msgContext.getProperty(PassThroughConstants.NO_ENTITY_BODY));
+
+        // if contentTypeInRequest is true, that means it is set from the transport headers. that means the header
+        // came in the source request.
         boolean contentTypeInRequest = outboundRequest.getHeader("Content-Type") != null
                 || outboundRequest.getHeader("content-type") != null;
         boolean isDefaultContentTypeEnabled = false;
@@ -378,25 +378,13 @@ public class TargetRequest {
 
     /**
      * Check whether the content type is multipart or not.
-     * @param contentType
+     * @param contentType Content-Type of the
      * @return true for multipart content types
      */
     public static boolean isMultipartContent(String contentType) {
-        if (contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
-                || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED)) {
-            return true;
-        }
-        return false;
-    }
 
-    public boolean isKeepAlive() {
-
-        return keepAlive;
-    }
-
-    public void setKeepAlive(boolean keepAlive) {
-
-        this.keepAlive = keepAlive;
+        return contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
+                || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED);
     }
 
     public boolean isChunk() {
@@ -404,18 +392,22 @@ public class TargetRequest {
         return chunk;
     }
 
-    public void setChunk(boolean chunk) {
-
-        this.chunk = chunk;
-    }
-
     public String getHttpVersion() {
 
         return httpVersion;
     }
 
-    public void setHttpVersion(String httpVersion) {
+    public String getHttpMethod() {
 
-        this.httpVersion = httpVersion;
+        return httpMethod;
+    }
+
+    public boolean isKeepAlive() {
+
+        return keepAlive;
+    }
+
+    public HttpCarbonMessage getOutboundCarbonRequest() {
+        return httpCarbonMessage;
     }
 }

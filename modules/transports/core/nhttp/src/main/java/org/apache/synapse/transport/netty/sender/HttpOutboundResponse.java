@@ -56,9 +56,9 @@ import java.util.Objects;
 /**
  * This class represents the Outbound Http response.
  */
-public class SourceResponse {
+public class HttpOutboundResponse {
 
-    private static final Logger LOGGER = Logger.getLogger(SourceResponse.class);
+    private static final Logger LOGGER = Logger.getLogger(HttpOutboundResponse.class);
 
     /**
      * Status of the response.
@@ -94,8 +94,7 @@ public class SourceResponse {
     }
 
     private HttpCarbonMessage createOutboundResponseCarbonMessage(MessageContext msgContext,
-                                                                  HttpCarbonMessage inboundCarbonMsg)
-            throws IOException {
+                                                                  HttpCarbonMessage inboundCarbonMsg) {
 
         version = determineHttpVersion(msgContext);
         statusCode = determineHttpStatusCode(msgContext);
@@ -107,7 +106,7 @@ public class SourceResponse {
         // that we set inside the HttpCarbonMessage using setHttpVersion, setHttpStatusCode, etc.
         HttpCarbonMessage outboundHttpCarbonMessage = new HttpCarbonMessage(new DefaultHttpResponse(
                 new HttpVersion(org.wso2.transport.http.netty.contract.Constants.HTTP_VERSION_PREFIX + version,
-                        true), new HttpResponseStatus(statusCode, statusLine)));
+                        true), HttpResponseStatus.valueOf(statusCode)));
 
         outboundHttpCarbonMessage.setHttpVersion(version);
         outboundHttpCarbonMessage.setHttpStatusCode(statusCode);
@@ -152,68 +151,27 @@ public class SourceResponse {
             }
         }
 
+        // Add transport headers
         RequestResponseUtils.addTransportHeaders(msgContext, outboundHttpCarbonMessage);
 
         // Add excess transport headers
         RequestResponseUtils.addExcessHeaders(msgContext, outboundHttpCarbonMessage);
 
-        //        Boolean noEntityBody = (Boolean) msgContext.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-//
-//        if (noEntityBody != null && Boolean.TRUE == noEntityBody) {
-//            sourceResponse.removeHeader(HTTP.CONTENT_TYPE);
-//            return;
-//        }
-
-        // set content length
-//        if (canResponseHaveBody(inboundCarbonMsg.getHttpMethod(), statusCode)) {
-//            setContentLengthHeader(msgContext, inboundCarbonMsg.getHttpMethod(), sourceResponse);
-//        }
-
-        try {
-            setContentLengthHeader(msgContext, inboundCarbonMsg.getHttpMethod(), outboundHttpCarbonMessage);
-        } catch (IOException e) {
-            String msg = "Failed to submit the response";
-            LOGGER.error(msg, e);
-            throw new AxisFault(msg, e);
-        }
-
         // set chunking status
+        // TODO: check - transport-http always sends the Content-length or transfer-encoding headers
+        //  even at the times where there is no entity to be sent. If that is okay, we can remove
+        //  this canResponseHaveBody check and just set chunking status.
         if (canResponseHaveBody(inboundCarbonMsg.getHttpMethod(), statusCode)) {
-            long contentLength = -1;
-
-            String contentLengthHeader = outboundHttpCarbonMessage.getHeader(BridgeConstants.CONTENT_LEN);
-            if (Objects.nonNull(contentLengthHeader)) {
-                contentLength = Long.parseLong(contentLengthHeader);
-            }
-
-            // TODO: check if we need to set chunking enable for content len = 0
-            if (contentLength != -1) {
-                outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, ChunkConfig.NEVER);
-            } else {
-                outboundHttpCarbonMessage.removeHeader(BridgeConstants.CONTENT_LEN);
+            boolean chunk = RequestResponseUtils.enableChunking(msgContext);
+            if (chunk) {
                 outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, ChunkConfig.ALWAYS);
+            } else {
+                outboundHttpCarbonMessage.setProperty(BridgeConstants.CHUNKING_CONFIG, ChunkConfig.NEVER);
             }
         }
 
         // set Connection keep alive header
-        boolean keepAlive = true;
-        String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
-        if ("true".equals(noKeepAlive) || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
-            keepAlive = false;
-        } else if (inboundCarbonMsg.getHttpMethod() != null
-                && isPayloadOptionalMethod(inboundCarbonMsg.getHttpMethod().toUpperCase())
-                && (inboundCarbonMsg.getHeaders().contains(HTTP.CONTENT_LEN)
-                || inboundCarbonMsg.getHeaders().contains(HTTP.TRANSFER_ENCODING))) {
-            // If the payload is delayed for GET/HEAD/DELETE, http-core-nio will start processing request, without
-            // waiting for the payload. Therefore the delayed payload will be appended to the next request. To avoid
-            // that, disable keep-alive to avoid re-using the existing connection by client for the next request.
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Disable keep-alive in the client connection : Content-length/Transfer-encoding " +
-                        "headers present for GET/HEAD/DELETE request");
-            }
-            keepAlive = false;
-        }
-        if (!keepAlive) {
+        if (!isKeepAlive(msgContext, inboundCarbonMsg)) {
             addHeader(outboundHttpCarbonMessage, HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
         }
 
@@ -522,4 +480,26 @@ public class SourceResponse {
             httpCarbonMessage.setHeader(name, headerValue);
         }
     }
+
+    private static boolean isKeepAlive(MessageContext msgContext, HttpCarbonMessage inboundCarbonMsg) {
+        String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
+        if ("true".equals(noKeepAlive) || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
+            return false;
+        } else if (inboundCarbonMsg.getHttpMethod() != null
+                && isPayloadOptionalMethod(inboundCarbonMsg.getHttpMethod().toUpperCase())
+                && (inboundCarbonMsg.getHeaders().contains(HTTP.CONTENT_LEN)
+                || inboundCarbonMsg.getHeaders().contains(HTTP.TRANSFER_ENCODING))) {
+            // If the payload is delayed for GET/HEAD/DELETE, http-core-nio will start processing request, without
+            // waiting for the payload. Therefore the delayed payload will be appended to the next request. To avoid
+            // that, disable keep-alive to avoid re-using the existing connection by client for the next request.
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Disable keep-alive in the client connection : Content-length/Transfer-encoding " +
+                        "headers present for GET/HEAD/DELETE request");
+            }
+            return false;
+        }
+
+        return true;
+    }
+
 }
