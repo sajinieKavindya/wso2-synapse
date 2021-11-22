@@ -222,8 +222,10 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 
         if (RequestResponseUtils.ignoreMessageBody(msgCtx)) {
             writeEmptyBody(outboundCarbonRequest);
+        } else {
+            writeEntityBody(msgCtx, outboundCarbonRequest);
         }
-        writeEntityBody(msgCtx, outboundCarbonRequest);
+
     }
 
     private SenderConfiguration createSenderConfiguration(HttpOutboundRequest httpOutboundRequest) {

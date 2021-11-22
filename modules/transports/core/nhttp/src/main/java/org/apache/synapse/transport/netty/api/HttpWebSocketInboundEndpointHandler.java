@@ -19,17 +19,16 @@ package org.apache.synapse.transport.netty.api;
 
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
-import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.description.TransportOutDescription;
 import org.apache.axis2.transport.TransportListener;
-import org.apache.http.nio.NHttpServerEventHandler;
+import org.apache.axis2.transport.TransportSender;
 import org.apache.log4j.Logger;
 import org.apache.synapse.commons.handlers.MessagingHandler;
+import org.apache.synapse.transport.netty.listener.Axis2HttpSSLTransportListener;
 import org.apache.synapse.transport.netty.listener.Axis2HttpTransportListener;
 import org.apache.synapse.transport.netty.sender.Axis2HttpTransportSender;
 import org.apache.synapse.transport.passthru.core.PassThroughListeningIOReactorManager;
-import org.apache.synapse.transport.passthru.core.ssl.SSLConfiguration;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -56,36 +55,10 @@ public class HttpWebSocketInboundEndpointHandler {
                                      List<MessagingHandler> messagingHandlers, String endpointName) {
 
         TransportListener transportListener = new Axis2HttpTransportListener(messagingHandlers);
-        TransportInDescription transportInDescription = new TransportInDescription("http");
-        transportInDescription.setReceiver(transportListener);
-        TransportOutDescription transportOutDescription = new TransportOutDescription("http");
-        transportOutDescription.setSender(new Axis2HttpTransportSender(messagingHandlers));
+        TransportSender transportSender = new Axis2HttpTransportSender(messagingHandlers);
 
-        try {
-            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
-            configurationContext.getAxisConfiguration().addTransportOut(transportOutDescription);
-            Parameter parameter = new Parameter();
-            parameter.setName("port");
-            parameter.setValue(inetSocketAddress.getPort());
-            transportInDescription.addParameter(parameter);
-
-            transportListener.init(configurationContext, transportInDescription);
-        } catch (AxisFault e) {
-            LOGGER.error("Couldn't initialize the " + transportInDescription.getName()
-                    + " transport listener for endpoint : " + endpointName + " on port "
-                    + inetSocketAddress.getPort(), e);
-            return false;
-        }
-
-        try {
-            transportListener.start();
-        } catch (AxisFault e) {
-            LOGGER.error("Couldn't start the " + transportInDescription.getName()
-                    + " transport listener for endpoint : " + endpointName + " on port " +
-                    + inetSocketAddress.getPort(), e);
-            return false;
-        }
-        return true;
+        return startServer("http", transportListener, transportSender, inetSocketAddress,
+                configurationContext, endpointName);
     }
 
     /**
@@ -112,17 +85,50 @@ public class HttpWebSocketInboundEndpointHandler {
      * Start SSL Endpoint Listen and events related to Endpoint handle by  given NHttpServerEventHandler.
      *
      * @param inetSocketAddress Socket Address of the Endpoint need to be start by underlying IOReactor
-     * @param nHttpServerEventHandler Event Handler for handle events for Endpoint
      * @param endpointName  Name of the Endpoint
-     * @param sslConfiguration SSL Configuration
      * @return Started or Not
      */
     public static boolean startSSLEndpoint(InetSocketAddress inetSocketAddress,
-                                           NHttpServerEventHandler nHttpServerEventHandler, String endpointName,
-                                            SSLConfiguration sslConfiguration) {
-        return PassThroughListeningIOReactorManager.getInstance().
-                   startDynamicPTTSSLEndpoint(inetSocketAddress, nHttpServerEventHandler,
-                                              endpointName, sslConfiguration);
+                                           ConfigurationContext configurationContext,
+                                           List<MessagingHandler> messagingHandlers, String endpointName) {
+        TransportListener transportListener = new Axis2HttpSSLTransportListener(messagingHandlers);
+        TransportSender transportSender = new Axis2HttpTransportSender(messagingHandlers);
+
+        return startServer("https", transportListener, transportSender, inetSocketAddress,
+                configurationContext, endpointName);
+    }
+
+    private static boolean startServer(String transportName, TransportListener transportListener,
+                                TransportSender transportSender, InetSocketAddress inetSocketAddress,
+                                ConfigurationContext configurationContext, String endpointName) {
+
+        TransportInDescription transportInDescription = new TransportInDescription(transportName);
+        transportInDescription.setReceiver(transportListener);
+
+        TransportOutDescription transportOutDescription = new TransportOutDescription(transportName);
+        transportOutDescription.setSender(transportSender);
+
+        try {
+            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
+            configurationContext.getAxisConfiguration().addTransportOut(transportOutDescription);
+
+            transportListener.init(configurationContext, transportInDescription);
+        } catch (AxisFault e) {
+            LOGGER.error("Couldn't initialize the " + transportInDescription.getName()
+                    + " transport listener for endpoint : " + endpointName + " on port "
+                    + inetSocketAddress.getPort(), e);
+            return false;
+        }
+
+        try {
+            transportListener.start();
+        } catch (AxisFault e) {
+            LOGGER.error("Couldn't start the " + transportInDescription.getName()
+                    + " transport listener for endpoint : " + endpointName + " on port "
+                    + inetSocketAddress.getPort(), e);
+            return false;
+        }
+        return true;
     }
 
     public static boolean isPortAvailable(int port) {

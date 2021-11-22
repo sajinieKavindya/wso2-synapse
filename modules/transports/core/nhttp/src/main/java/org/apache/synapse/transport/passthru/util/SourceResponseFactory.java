@@ -98,7 +98,7 @@ public class SourceResponseFactory {
         if (transportHeaders != null) {
             addResponseHeader(sourceResponse, transportHeaders);
         }else{
-        	  Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
+             Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
         	 if (noEntityBody == null || Boolean.FALSE == noEntityBody) {
         		 OMOutputFormat format = NhttpUtil.getOMOutputFormat(msgContext);
         		 transportHeaders = new HashMap();

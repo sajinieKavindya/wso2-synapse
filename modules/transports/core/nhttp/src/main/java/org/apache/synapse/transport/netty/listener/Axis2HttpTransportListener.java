@@ -30,6 +30,7 @@ import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.http.conn.Scheme;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
+import org.apache.synapse.transport.netty.util.RequestResponseUtils;
 import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contract.ServerConnector;
 import org.wso2.transport.http.netty.contract.ServerConnectorFuture;
@@ -62,17 +63,16 @@ public class Axis2HttpTransportListener implements TransportListener {
     public void init(ConfigurationContext configurationContext, TransportInDescription transportInDescription)
             throws AxisFault {
 
-        sourceConfiguration = new SourceConfiguration(configurationContext, transportInDescription,
-                new Scheme("http", 80, false), messagingHandlers);
+        Scheme scheme = initScheme();
+        sourceConfiguration = new SourceConfiguration(configurationContext, transportInDescription, scheme,
+                messagingHandlers);
         sourceConfiguration.build();
 
         if (sourceConfiguration.getHttpGetRequestProcessor() != null) {
             sourceConfiguration.getHttpGetRequestProcessor().init(sourceConfiguration.getConfigurationContext(), null);
         }
 
-        ListenerConfiguration listenerConfiguration = new ListenerConfiguration();
-        listenerConfiguration.setPort(sourceConfiguration.getPort());
-        listenerConfiguration.setHost(sourceConfiguration.getHost());
+        ListenerConfiguration listenerConfiguration = initListenerConfiguration(transportInDescription);
 
         HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
         this.serverConnector = httpWsConnectorFactory
@@ -114,5 +114,14 @@ public class Axis2HttpTransportListener implements TransportListener {
     @Override
     public void destroy() {
 
+    }
+
+    protected Scheme initScheme() {
+        return new Scheme("http", 80, false);
+    }
+
+    protected ListenerConfiguration initListenerConfiguration(TransportInDescription transportInDescription)
+            throws AxisFault {
+        return RequestResponseUtils.getListenerConfig(transportInDescription, false);
     }
 }

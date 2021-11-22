@@ -34,9 +34,12 @@ import org.apache.axis2.addressing.EndpointReference;
 import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.description.Parameter;
+import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.RequestResponseTransport;
+import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.TransportUtils;
+import org.apache.axis2.transport.base.ParamUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
@@ -45,6 +48,7 @@ import org.apache.http.HttpStatus;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.apache.synapse.transport.netty.sender.SourceResponseDelete;
 import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
@@ -57,6 +61,9 @@ import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
 import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
+import org.wso2.transport.http.netty.contract.config.InboundMsgSizeValidationConfig;
+import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
+import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
@@ -65,6 +72,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -99,13 +107,22 @@ public class RequestResponseUtils {
         ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
         msgCtx.setConfigurationContext(configurationContext);
 
-        msgCtx.setTransportOut(configurationContext.getAxisConfiguration().getTransportOut(Constants.TRANSPORT_HTTP));
-        msgCtx.setTransportIn(configurationContext.getAxisConfiguration().getTransportIn(Constants.TRANSPORT_HTTP));
-        msgCtx.setIncomingTransportName(Constants.TRANSPORT_HTTP);
-
         //TODO: set correlation id
         //TODO: set transaction id
-        //TODO: SSL check
+
+        if (sourceConfiguration.getScheme().isSSL()) {
+            msgCtx.setTransportOut(configurationContext.getAxisConfiguration()
+                    .getTransportOut(Constants.TRANSPORT_HTTPS));
+            msgCtx.setTransportIn(configurationContext.getAxisConfiguration()
+                    .getTransportIn(Constants.TRANSPORT_HTTPS));
+            msgCtx.setIncomingTransportName(Constants.TRANSPORT_HTTPS);
+        } else {
+            msgCtx.setTransportOut(configurationContext.getAxisConfiguration()
+                    .getTransportOut(Constants.TRANSPORT_HTTP));
+            msgCtx.setTransportIn(configurationContext.getAxisConfiguration()
+                    .getTransportIn(Constants.TRANSPORT_HTTP));
+            msgCtx.setIncomingTransportName(Constants.TRANSPORT_HTTP);
+        }
 
         msgCtx.setServerSide(true);
         msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, incomingCarbonMsg.getProperty("TO"));
@@ -599,8 +616,8 @@ public class RequestResponseUtils {
      * @param formatter      response formatter
      * @param format         response format
      */
-    public static void setContentType(MessageContext msgContext, SourceResponseDelete sourceResponseDelete, MessageFormatter formatter,
-                                      OMOutputFormat format) {
+    public static void setContentType(MessageContext msgContext, SourceResponseDelete sourceResponseDelete,
+                                      MessageFormatter formatter, OMOutputFormat format) {
 
         if (DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
             return;
@@ -984,4 +1001,221 @@ public class RequestResponseUtils {
                     msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0));
         }
     }
+
+    public static KeepAliveConfig getKeepAliveConfig(String keepAliveConfig) throws AxisFault {
+        switch (keepAliveConfig) {
+            case BridgeConstants.AUTO:
+                return KeepAliveConfig.AUTO;
+            case BridgeConstants.ALWAYS:
+                return KeepAliveConfig.ALWAYS;
+            case BridgeConstants.NEVER:
+                return KeepAliveConfig.NEVER;
+            default:
+                throw new AxisFault(
+                        "Invalid configuration found for Keep-Alive: " + keepAliveConfig);
+        }
+    }
+
+    /**
+     * Returns Listener configuration instance populated with transport in description.
+     *
+     * @param inDescription    transport in description.
+     * @return                 transport listener configuration instance.
+     */
+    public static ListenerConfiguration getListenerConfig(TransportInDescription inDescription, boolean sslEnabled)
+            throws AxisFault {
+
+        ListenerConfiguration listenerConfiguration = new ListenerConfiguration();
+
+        int port = ParamUtils.getRequiredParamInt(inDescription, TransportListener.PARAM_PORT);
+        if (port == 0) {
+            throw new AxisFault("Listener port is not defined!");
+        }
+        listenerConfiguration.setPort(port);
+
+        String host;
+        Parameter hostParameter = inDescription.getParameter(TransportListener.HOST_ADDRESS);
+        if (hostParameter != null) {
+            host = ((String) hostParameter.getValue()).trim();
+        } else {
+            try {
+                host = java.net.InetAddress.getLocalHost().getHostName();
+            } catch (UnknownHostException e) {
+                LOGGER.warn("Unable to lookup local host name. Hence, using 'localhost'");
+                host = BridgeConstants.HTTP_DEFAULT_HOST;
+            }
+        }
+        listenerConfiguration.setHost(host);
+
+        String httpVersion = "1.1";
+        Parameter httpVersionParameter = inDescription.getParameter("PROTOCOL");
+        if (httpVersionParameter != null) {
+            httpVersion = ((String) httpVersionParameter.getValue()).trim();
+            if (!httpVersion.isEmpty()) {
+                listenerConfiguration.setVersion(httpVersion);
+            }
+
+//            listenerConfiguration.setPipeliningLimit(http1Settings
+//            .getIntValue(HttpConstants.PIPELINING_REQUEST_LIMIT));
+        }
+
+        Parameter keepAliveParam = inDescription.getParameter("keepAlive");
+        if (BridgeConstants.HTTP_1_1_VERSION.equals(httpVersion) && keepAliveParam != null) {
+            listenerConfiguration.setKeepAliveConfig(RequestResponseUtils
+                    .getKeepAliveConfig(((String) keepAliveParam.getValue()).trim()));
+        }
+
+        // Set Request validation limits.
+        NettyConfiguration configuration = NettyConfiguration.getInstance();
+        boolean isRequestLimitsValidationEnabled = configuration.isRequestLimitsValidationEnabled();
+        if (isRequestLimitsValidationEnabled) {
+            setInboundMgsSizeValidationConfig(configuration.getMaxStatusLineLength(), configuration.getMaxHeaderSize(),
+                    configuration.getMaxEntityBodySize(), listenerConfiguration.getMsgSizeValidationConfig());
+        }
+
+        int idleTimeout = NettyConfiguration.getInstance().getSocketTimeout();
+        if (idleTimeout < 0) {
+            throw new AxisFault("Idle timeout cannot be negative. If you want to disable the " +
+                    "timeout please use value 0");
+        }
+        listenerConfiguration.setSocketIdleTimeout(idleTimeout);
+
+//        if (endpointConfig.getType().getName().equalsIgnoreCase(HttpConstants.LISTENER_CONFIGURATION)) {
+//            BString serverName = endpointConfig.getStringValue(HttpConstants.SERVER_NAME);
+//            listenerConfiguration.setServerHeader(serverName != null ? serverName.getValue() : getServerName());
+//        } else {
+//            listenerConfiguration.setServerHeader(getServerName());
+//        }
+
+//        BMap<BString, Object> sslConfig = endpointConfig.getMapValue(HttpConstants.ENDPOINT_CONFIG_SECURESOCKET);
+//        if (sslConfig != null) {
+//            return setSslConfig(sslConfig, listenerConfiguration);
+//        }
+
+        listenerConfiguration.setPipeliningEnabled(true); //Pipelining is enabled all the time
+
+        if (isHTTPTraceLoggerEnabled()) {
+            listenerConfiguration.setHttpTraceLogEnabled(true);
+        }
+
+        if (isHTTPAccessLoggerEnabled()) {
+            listenerConfiguration.setHttpAccessLogEnabled(true);
+        }
+
+        return listenerConfiguration;
+    }
+
+    public static boolean isHTTPTraceLoggerEnabled() {
+        return Boolean.parseBoolean(System.getProperty(BridgeConstants.HTTP_TRACE_LOG_ENABLED));
+    }
+
+    private static boolean isHTTPAccessLoggerEnabled() {
+        return Boolean.parseBoolean(System.getProperty(BridgeConstants.HTTP_ACCESS_LOG_ENABLED));
+    }
+
+    private static ListenerConfiguration setSslConfig(TransportInDescription transportIn,
+                                                      ListenerConfiguration listenerConfiguration) {
+//        List<Parameter> serverParamList = new ArrayList<>();
+//        listenerConfiguration.setScheme(BridgeConstants.PROTOCOL_HTTPS);
+//
+//        Parameter keyParam = transportIn.getParameter("keystore");
+//        Parameter trustParam = transportIn.getParameter("truststore");
+//        Parameter clientAuthParam = transportIn.getParameter("SSLVerifyClient");
+//        Parameter httpsProtocolsParam = transportIn.getParameter("HttpsProtocols");
+//        final Parameter sslpParameter = transportIn.getParameter("SSLProtocol");
+//        Parameter preferredCiphersParam = transportIn.getParameter(NhttpConstants.PREFERRED_CIPHERS);
+//        final String sslProtocol = sslpParameter != null ? sslpParameter.getValue().toString() : "TLS";
+//        OMElement keyStoreEl = keyParam != null ? keyParam.getParameterElement().getFirstElement() : null;
+//        OMElement trustStoreEl = trustParam != null ? trustParam.getParameterElement().getFirstElement() : null;
+//        OMElement clientAuthEl = clientAuthParam != null ? clientAuthParam.getParameterElement() : null;
+//        OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
+//        OMElement preferredCiphersEl = preferredCiphersParam != null ?
+//                preferredCiphersParam.getParameterElement() : null;
+//        final Parameter cvp = transportIn.getParameter("CertificateRevocationVerifier");
+//
+//
+//
+//
+//        BMap<BString, Object> key = getBMapValueIfPresent(secureSocket, HttpConstants.SECURESOCKET_CONFIG_KEY);
+//        assert key != null; // This validation happens at Ballerina level
+//        evaluateKeyField(key, listenerConfiguration);
+//        BMap<BString, Object> mutualSsl = getBMapValueIfPresent(secureSocket, SECURESOCKET_CONFIG_MUTUAL_SSL);
+//        if (mutualSsl != null) {
+//            String verifyClient = mutualSsl.getStringValue(HttpConstants.SECURESOCKET_CONFIG_VERIFY_CLIENT)
+//                    .getValue();
+//            listenerConfiguration.setVerifyClient(verifyClient);
+//            Object cert = mutualSsl.get(HttpConstants.SECURESOCKET_CONFIG_CERT);
+//            evaluateCertField(cert, listenerConfiguration);
+//        }
+//        BMap<BString, Object> protocol = getBMapValueIfPresent(secureSocket, SECURESOCKET_CONFIG_PROTOCOL);
+//        if (protocol != null) {
+//            evaluateProtocolField(protocol, listenerConfiguration, serverParamList);
+//        }
+//        BMap<BString, Object> certValidation =
+//                getBMapValueIfPresent(secureSocket, SECURESOCKET_CONFIG_CERT_VALIDATION);
+//        if (certValidation != null) {
+//            evaluateCertValidationField(certValidation, listenerConfiguration);
+//        }
+//        BArray ciphers = secureSocket.containsKey(HttpConstants.SECURESOCKET_CONFIG_CIPHERS) ?
+//                secureSocket.getArrayValue(HttpConstants.SECURESOCKET_CONFIG_CIPHERS) : null;
+//        if (ciphers != null) {
+//            evaluateCiphersField(ciphers, serverParamList);
+//        }
+//        evaluateCommonFields(secureSocket, listenerConfiguration, serverParamList);
+//
+//        listenerConfiguration.setTLSStoreType(HttpConstants.PKCS_STORE_TYPE);
+//        if (!serverParamList.isEmpty()) {
+//            listenerConfiguration.setParameters(serverParamList);
+//        }
+//        listenerConfiguration.setId(HttpUtil.getListenerInterface(listenerConfiguration.getHost(),
+//                listenerConfiguration.getPort()));
+        return listenerConfiguration;
+    }
+
+    public static void setInboundMgsSizeValidationConfig(int maxInitialLineLength, int maxHeaderSize,
+                                                         int maxEntityBodySize,
+                                                         InboundMsgSizeValidationConfig sizeValidationConfig)
+            throws AxisFault {
+        if (maxInitialLineLength >= 0) {
+            sizeValidationConfig.setMaxInitialLineLength(Math.toIntExact(maxInitialLineLength));
+        } else {
+            throw new AxisFault(
+                    "Invalid configuration found for max initial line length : " + maxInitialLineLength);
+        }
+
+        if (maxHeaderSize >= 0) {
+            sizeValidationConfig.setMaxHeaderSize(Math.toIntExact(maxHeaderSize));
+        } else {
+            throw new AxisFault("Invalid configuration found for maxHeaderSize : " + maxHeaderSize);
+        }
+
+        if (maxEntityBodySize != -1) {
+            if (maxEntityBodySize >= 0) {
+                sizeValidationConfig.setMaxEntityBodySize(maxEntityBodySize);
+            } else {
+                throw new AxisFault(
+                        "Invalid configuration found for maxEntityBodySize : " + maxEntityBodySize);
+            }
+        }
+    }
+
+//    private static void evaluateCertValidationField(BMap<BString, Object> certValidation,
+//                                                    SslConfiguration sslConfiguration) {
+//        String type = certValidation.getStringValue(HttpConstants.SECURESOCKET_CONFIG_CERT_VALIDATION_TYPE)
+//        .getValue();
+//        if (type.equals(HttpConstants.SECURESOCKET_CONFIG_CERT_VALIDATION_TYPE_OCSP_STAPLING.getValue())) {
+//            sslConfiguration.setOcspStaplingEnabled(true);
+//        } else {
+//            sslConfiguration.setValidateCertEnabled(true);
+//        }
+//        long cacheSize = certValidation.getIntValue(SECURESOCKET_CONFIG_CERT_VALIDATION_CACHE_SIZE).intValue();
+//        long cacheValidityPeriod = ((BDecimal) certValidation.get(
+//                HttpConstants.SECURESOCKET_CONFIG_CERT_VALIDATION_CACHE_VALIDITY_PERIOD)).intValue();
+//        if (cacheValidityPeriod != 0) {
+//            sslConfiguration.setCacheValidityPeriod(Math.toIntExact(cacheValidityPeriod));
+//        }
+//        if (cacheSize != 0) {
+//            sslConfiguration.setCacheSize(Math.toIntExact(cacheSize));
+//        }
+//    }
 }

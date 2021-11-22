@@ -75,4 +75,27 @@ public class BridgeConstants {
     public static final String CARBON_SERVER_XML_NAMESPACE = "http://wso2.org/projects/carbon/carbon.xml";
 
     public static final String CHUNKING_CONFIG = "chunking_config";
+
+    public static final String DEFAULT_VERSION_HTTP_1_1 = "HTTP/1.1";
+    public static final float HTTP_1_1 = 1.1f;
+    public static final float HTTP_1_0 = 1.0f;
+    public static final String HTTP_2_0 = "2.0";
+    public static final String HTTP_VERSION_PREFIX = "HTTP/";
+    public static final String HTTP_1_1_VERSION = "1.1";
+    public static final String HTTP_2_0_VERSION = "2.0";
+
+    public static final String AUTO = "AUTO";
+    public static final String ALWAYS = "ALWAYS";
+    public static final String NEVER = "NEVER";
+
+    public static final String PROTOCOL_HTTP = "http";
+    public static final String PROTOCOL_HTTPS = "https";
+
+    public static final String HTTP_DEFAULT_HOST = "0.0.0.0";
+
+    // Logging related runtime parameter names
+    public static final String HTTP_TRACE_LOG = "http.tracelog";
+    public static final String HTTP_TRACE_LOG_ENABLED = "http.tracelog.enabled";
+    public static final String HTTP_ACCESS_LOG = "http.accesslog";
+    public static final String HTTP_ACCESS_LOG_ENABLED = "http.accesslog.enabled";
 }

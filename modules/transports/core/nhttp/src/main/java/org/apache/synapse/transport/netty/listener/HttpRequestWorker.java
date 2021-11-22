@@ -79,7 +79,7 @@ public class HttpRequestWorker implements Runnable {
 
     private static final Logger LOGGER = Logger.getLogger(HttpRequestWorker.class);
     private final HttpCarbonMessage incomingCarbonMsg;
-    private org.apache.axis2.context.MessageContext msgContext = null;
+    private org.apache.axis2.context.MessageContext msgContext;
     private final SourceConfiguration sourceConfiguration;
     private ConfigurationContext configurationContext;
 
@@ -112,19 +112,27 @@ public class HttpRequestWorker implements Runnable {
             return;
         }
 
-        boolean isRest = isRESTRequest(msgContext, incomingCarbonMsg.getHttpMethod());
-
-        if (!isRest) {
-            if (isEntityEnclosing(incomingCarbonMsg)) {
-                processEntityEnclosingRequest(msgContext, true);
-            } else {
-                processNonEntityEnclosingRESTHandler(null, msgContext, true);
-            }
-        } else {
-            String contentTypeHeader = incomingCarbonMsg.getHeaders().get(HTTP.CONTENT_TYPE);
-            SOAPEnvelope soapEnvelope = this.handleRESTUrlPost(contentTypeHeader, msgContext);
-            processNonEntityEnclosingRESTHandler(soapEnvelope, msgContext, true);
+        try {
+            populateProperties(msgContext);
+            AxisEngine.receive(msgContext);
+        } catch (AxisFault ex) {
+            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+                    + " request for : " + incomingCarbonMsg.getProperty("TO"), ex);
         }
+
+//        boolean isRest = isRESTRequest(msgContext, incomingCarbonMsg.getHttpMethod());
+//
+//        if (!isRest) {
+//            if (isEntityEnclosing(incomingCarbonMsg)) {
+//                processEntityEnclosingRequest(msgContext, true);
+//            } else {
+//                processNonEntityEnclosingRESTHandler(null, msgContext, true);
+//            }
+//        } else {
+//            String contentTypeHeader = incomingCarbonMsg.getHeaders().get(HTTP.CONTENT_TYPE);
+//            SOAPEnvelope soapEnvelope = this.handleRESTUrlPost(contentTypeHeader, msgContext);
+//            processNonEntityEnclosingRESTHandler(soapEnvelope, msgContext, true);
+//        }
 
         sendAck(msgContext);
         cleanup();
@@ -137,17 +145,17 @@ public class HttpRequestWorker implements Runnable {
                 && Boolean.TRUE.equals((msgContext.getProperty(PassThroughConstants.WSDL_GEN_HANDLED))));
     }
 
-    public boolean isRESTRequest(MessageContext msgContext, String method) {
-
-        if (msgContext.getProperty(PassThroughConstants.REST_GET_DELETE_INVOKE) == null
-                || !((Boolean) msgContext.getProperty(PassThroughConstants.REST_GET_DELETE_INVOKE))) {
-            return false;
-        }
-        msgContext.setProperty(HTTPConstants.HTTP_METHOD, method);
-        msgContext.setServerSide(true);
-        msgContext.setDoingREST(true);
-        return true;
-    }
+//    public boolean isRESTRequest(MessageContext msgContext, String method) {
+//
+//        if (msgContext.getProperty(PassThroughConstants.REST_GET_DELETE_INVOKE) == null
+//                || !((Boolean) msgContext.getProperty(PassThroughConstants.REST_GET_DELETE_INVOKE))) {
+//            return false;
+//        }
+//        msgContext.setProperty(HTTPConstants.HTTP_METHOD, method);
+//        msgContext.setServerSide(true);
+//        msgContext.setDoingREST(true);
+//        return true;
+//    }
 
     private boolean isEntityEnclosing(HttpCarbonMessage httpCarbonMessage) {
 
@@ -167,7 +175,7 @@ public class HttpRequestWorker implements Runnable {
 
     /**
      * Get Uri of underlying HttpCarbonMessage and calculate service prefix and add to message context.
-     * Create response buffers for  HTTP GET, DELETE, OPTION and HEAD methods.
+     * Create response buffers for HTTP GET, DELETE, OPTION and HEAD methods.
      *
      * @param msgContext Axis2MessageContext of the request
      */
@@ -197,8 +205,7 @@ public class HttpRequestWorker implements Runnable {
 //        msgContext.setTo(new EndpointReference(requestUri));
 
         String method = incomingCarbonMsg.getHttpMethod();
-        if (PassThroughConstants.HTTP_GET.equals(method)
-                || PassThroughConstants.HTTP_HEAD.equals(method)
+        if (PassThroughConstants.HTTP_GET.equals(method) || PassThroughConstants.HTTP_HEAD.equals(method)
                 || PassThroughConstants.HTTP_OPTIONS.equals(method)) {
 
             HttpCarbonMessage outboundHttpCarbonMsg = new HttpCarbonMessage(
@@ -208,260 +215,277 @@ public class HttpRequestWorker implements Runnable {
         }
     }
 
-    private void populateProperties(MessageContext msgCtx) {
+    private void populateProperties(MessageContext msgCtx) throws AxisFault {
 
         String contentTypeHeader = incomingCarbonMsg.getHeaders().get(CONTENT_TYPE_HEADER);
-        String charSetEncoding = null;
-        String contentType = null;
+        String charSetEncoding;
+        String contentType;
+        String messageType;
+
         if (contentTypeHeader != null) {
-            charSetEncoding = BuilderUtil.getCharSetEncoding(contentTypeHeader);
-            contentType = TransportUtils.getContentType(contentTypeHeader, msgCtx);
+            contentType = contentTypeHeader;
+            if (HTTPConstants.MEDIA_TYPE_X_WWW_FORM.equals(contentTypeHeader)) {
+                messageType = "application/xml";
+            } else {
+                messageType = TransportUtils.getContentType(contentTypeHeader, msgCtx);
+            }
+        } else {
+            if (HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty(BridgeConstants.HTTP_METHOD))
+                    || "DELETE".equals(msgContext.getProperty(BridgeConstants.HTTP_METHOD))) {
+                contentType = HTTPConstants.MEDIA_TYPE_X_WWW_FORM;
+                messageType = "application/xml";
+            } else {
+                Parameter param = sourceConfiguration.getConfigurationContext().getAxisConfiguration().
+                        getParameter(PassThroughConstants.REQUEST_CONTENT_TYPE);
+                if (param != null) {
+                    contentType = param.getValue().toString();
+                    messageType = contentType;
+                } else {
+                    contentType = PassThroughConstants.APPLICATION_OCTET_STREAM;
+                    messageType = "application/xml";
+                }
+            }
         }
-        msgCtx.setProperty(Constants.Configuration.CONTENT_TYPE, contentTypeHeader);
-        msgCtx.setProperty(Constants.Configuration.MESSAGE_TYPE, "application/xml");
-        if (contentTypeHeader == null ||
-                RequestResponseUtils.isRESTRequest(contentTypeHeader) ||
-                RequestResponseUtils.isRest(contentTypeHeader)) {
+        msgCtx.setProperty(Constants.Configuration.CONTENT_TYPE, contentType);
+        msgCtx.setProperty(Constants.Configuration.MESSAGE_TYPE, messageType);
+        charSetEncoding = BuilderUtil.getCharSetEncoding(contentType);
+        msgCtx.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
+
+        msgCtx.setProperty(BridgeConstants.HTTP_METHOD, incomingCarbonMsg.getHttpMethod().toUpperCase());
+        msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
+        msgCtx.setServerSide(true);
+
+        if (!isEntityEnclosing(incomingCarbonMsg)) {
+            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
+        }
+
+        if (contentTypeHeader == null
+                || RequestResponseUtils.isRESTRequest(contentTypeHeader)
+                || RequestResponseUtils.isRest(contentTypeHeader)) {
             msgCtx.setProperty(BridgeConstants.REST_REQUEST_CONTENT_TYPE, contentType);
             msgCtx.setDoingREST(true);
         }
-
-        // get the contentType of char encoding
-        if (charSetEncoding == null) {
-            charSetEncoding = MessageContext.DEFAULT_CHAR_SET_ENCODING;
-        }
-        msgCtx.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
-
-        msgCtx.setProperty(BridgeConstants.HTTP_METHOD, incomingCarbonMsg.getHttpMethod());
-        //TODO: create response buffers for  HTTP GET, DELETE, OPTION and HEAD methods ->
-        // httpGetRequestProcessor.process ??
-        //TODO: this is to handle wsdl requests
-
-        msgCtx.setServerSide(true);
 
         String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
         if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
             soapAction = soapAction.substring(1, soapAction.length() - 1);
             msgCtx.setSoapAction(soapAction);
         }
-        int soapVersion =
-                RequestResponseUtils.populateSOAPVersion(msgCtx, soapAction, contentTypeHeader);
+        int soapVersion = RequestResponseUtils.populateSOAPVersion(msgCtx, soapAction, contentTypeHeader);
         SOAPEnvelope envelope;
+        SOAPFactory fac;
         if (soapVersion == 1) {
-            SOAPFactory fac = OMAbstractFactory.getSOAP11Factory();
-            envelope = fac.getDefaultEnvelope();
+            fac = OMAbstractFactory.getSOAP11Factory();
         } else {
-            SOAPFactory fac = OMAbstractFactory.getSOAP12Factory();
-            envelope = fac.getDefaultEnvelope();
+            fac = OMAbstractFactory.getSOAP12Factory();
         }
-        try {
-            msgCtx.setEnvelope(envelope);
-        } catch (AxisFault ex) {
-            LOGGER.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error occurred while setting the soap envelope", ex);
-        }
+        envelope = fac.getDefaultEnvelope();
+        msgCtx.setEnvelope(envelope);
     }
 
-    public void processEntityEnclosingRequest(MessageContext msgContext, boolean injectToAxis2Engine) {
+//    public void processEntityEnclosingRequest(MessageContext msgContext, boolean injectToAxis2Engine) {
+//
+//        try {
+//            String contentTypeHeader = incomingCarbonMsg.getHeaders().get(CONTENT_TYPE_HEADER);
+//            contentTypeHeader = contentTypeHeader != null ? contentTypeHeader : inferContentType();
+//
+//            String charSetEncoding = null;
+//            String contentType = null;
+//
+//            if (contentTypeHeader != null) {
+//                charSetEncoding = BuilderUtil.getCharSetEncoding(contentTypeHeader);
+//                contentType = TransportUtils.getContentType(contentTypeHeader, msgContext);
+//            }
+//            // get the contentType of char encoding
+//            if (charSetEncoding == null) {
+//                charSetEncoding = MessageContext.DEFAULT_CHAR_SET_ENCODING;
+//            }
+//            String method = incomingCarbonMsg.getHttpMethod() != null ?
+//                    incomingCarbonMsg.getHttpMethod().toUpperCase() : "";
+//
+//            msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
+//            msgContext.setProperty(HTTPConstants.HTTP_METHOD, method);
+//            msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
+//            msgContext.setServerSide(true);
+//
+//            msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentTypeHeader);
+//            msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, contentType);
+//
+//            if (contentTypeHeader == null || HTTPTransportUtils.isRESTRequest(contentTypeHeader)
+//                    || isRest(contentTypeHeader)) {
+//                msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
+//                msgContext.setDoingREST(true);
+//                SOAPEnvelope soapEnvelope = this.handleRESTUrlPost(contentTypeHeader, msgContext);
+//                processNonEntityEnclosingRESTHandler(soapEnvelope, msgContext, injectToAxis2Engine);
+//                return;
+//            } else {
+//                String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
+//
+//                int soapVersion = HTTPTransportUtils.
+//                        initializeMessageContext(msgContext, soapAction,
+//                                (String) incomingCarbonMsg.getProperty("TO"), contentTypeHeader);
+//                SOAPEnvelope envelope;
+//
+//                if (soapVersion == 1) {
+//                    SOAPFactory fac = OMAbstractFactory.getSOAP11Factory();
+//                    envelope = fac.getDefaultEnvelope();
+//                } else if (soapVersion == 2) {
+//                    SOAPFactory fac = OMAbstractFactory.getSOAP12Factory();
+//                    envelope = fac.getDefaultEnvelope();
+//                } else {
+//                    SOAPFactory fac = OMAbstractFactory.getSOAP12Factory();
+//                    envelope = fac.getDefaultEnvelope();
+//                }
+//
+//                if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
+//                    soapAction = soapAction.substring(1, soapAction.length() - 1);
+//                    msgContext.setSoapAction(soapAction);
+//                }
+//
+//                msgContext.setEnvelope(envelope);
+//            }
+//            if (injectToAxis2Engine) {
+//                AxisEngine.receive(msgContext);
+//            }
+//        } catch (Exception e) {
+//            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+//                    + " request for : " + incomingCarbonMsg.getProperty("TO"), e);
+//        }
+//    }
 
-        try {
-            String contentTypeHeader = incomingCarbonMsg.getHeaders().get(CONTENT_TYPE_HEADER);
-            contentTypeHeader = contentTypeHeader != null ? contentTypeHeader : inferContentType();
-
-            String charSetEncoding = null;
-            String contentType = null;
-
-            if (contentTypeHeader != null) {
-                charSetEncoding = BuilderUtil.getCharSetEncoding(contentTypeHeader);
-                contentType = TransportUtils.getContentType(contentTypeHeader, msgContext);
-            }
-            // get the contentType of char encoding
-            if (charSetEncoding == null) {
-                charSetEncoding = MessageContext.DEFAULT_CHAR_SET_ENCODING;
-            }
-            String method = incomingCarbonMsg.getHttpMethod() != null ?
-                    incomingCarbonMsg.getHttpMethod().toUpperCase() : "";
-
-            msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
-            msgContext.setProperty(HTTPConstants.HTTP_METHOD, method);
-            msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
-            msgContext.setServerSide(true);
-
-            msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentTypeHeader);
-            msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, contentType);
-
-            if (contentTypeHeader == null || HTTPTransportUtils.isRESTRequest(contentTypeHeader)
-                    || isRest(contentTypeHeader)) {
-                msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
-                msgContext.setDoingREST(true);
-                SOAPEnvelope soapEnvelope = this.handleRESTUrlPost(contentTypeHeader, msgContext);
-                processNonEntityEnclosingRESTHandler(soapEnvelope, msgContext, injectToAxis2Engine);
-                return;
-            } else {
-                String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
-
-                int soapVersion = HTTPTransportUtils.
-                        initializeMessageContext(msgContext, soapAction,
-                                (String) incomingCarbonMsg.getProperty("TO"), contentTypeHeader);
-                SOAPEnvelope envelope;
-
-                if (soapVersion == 1) {
-                    SOAPFactory fac = OMAbstractFactory.getSOAP11Factory();
-                    envelope = fac.getDefaultEnvelope();
-                } else if (soapVersion == 2) {
-                    SOAPFactory fac = OMAbstractFactory.getSOAP12Factory();
-                    envelope = fac.getDefaultEnvelope();
-                } else {
-                    SOAPFactory fac = OMAbstractFactory.getSOAP12Factory();
-                    envelope = fac.getDefaultEnvelope();
-                }
-
-                if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
-                    soapAction = soapAction.substring(1, soapAction.length() - 1);
-                    msgContext.setSoapAction(soapAction);
-                }
-
-                msgContext.setEnvelope(envelope);
-            }
-            if (injectToAxis2Engine) {
-                AxisEngine.receive(msgContext);
-            }
-        } catch (Exception e) {
-            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
-                    + " request for : " + incomingCarbonMsg.getProperty("TO"), e);
-        }
-    }
-
-    public void processNonEntityEnclosingRESTHandler(SOAPEnvelope soapEnvelope, MessageContext msgContext,
-                                                     boolean injectToAxis2Engine) {
-
-        String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
-        if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
-            soapAction = soapAction.substring(1, soapAction.length() - 1);
-        }
-
-        msgContext.setSoapAction(soapAction);
-        msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
-        msgContext.setServerSide(true);
-        msgContext.setDoingREST(true);
-        if (!isEntityEnclosing(incomingCarbonMsg)) {
-            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
-        }
-
-        try {
-            if (soapEnvelope == null) {
-                msgContext.setEnvelope(new SOAP11Factory().getDefaultEnvelope());
-            } else {
-                msgContext.setEnvelope(soapEnvelope);
-            }
-
-            if (injectToAxis2Engine) {
-                AxisEngine.receive(msgContext);
-            }
-        } catch (AxisFault axisFault) {
-            handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
-                    " request for : " + incomingCarbonMsg.getProperty("TO"), axisFault);
-        } catch (Exception e) {
-            String encodedURL = StringEscapeUtils.escapeHtml((String) incomingCarbonMsg.getProperty("TO"));
-            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
-                    + " request for : " + encodedURL + ". ", e);
-        }
-    }
-
-    /**
-     * Method will setup the necessary parameters for the rest url post action.
-     *
-     * @param contentTypeHdr
-     * @param msgContext
-     * @return SOAPEnvelope
-     * @throws FactoryConfigurationError
-     */
-    public SOAPEnvelope handleRESTUrlPost(String contentTypeHdr, MessageContext msgContext)
-            throws FactoryConfigurationError {
-
-        SOAPEnvelope soapEnvelope = null;
-        String contentType = contentTypeHdr != null ? TransportUtils.getContentType(contentTypeHdr, msgContext) : null;
-        // When POST request doesn't contain a Content-Type,
-        // recipient should consider it as application/octet-stream (rfc2616)
-        if (contentType == null || contentType.isEmpty()) {
-            contentType = PassThroughConstants.APPLICATION_OCTET_STREAM;
-            // Temp fix for https://github.com/wso2/product-ei/issues/2001
-            if (HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty("HTTP_METHOD")) || "DELETE"
-                    .equals(msgContext.getProperty("HTTP_METHOD"))) {
-                contentType = HTTPConstants.MEDIA_TYPE_X_WWW_FORM;
-            }
-        }
-        if (HTTPConstants.MEDIA_TYPE_X_WWW_FORM.equals(contentType) ||
-                (PassThroughConstants.APPLICATION_OCTET_STREAM.equals(contentType) && contentTypeHdr == null)) {
-            msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
-            String charSetEncoding;
-            if (contentTypeHdr != null) {
-                msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentTypeHdr);
-                charSetEncoding = BuilderUtil.getCharSetEncoding(contentTypeHdr);
-            } else {
-                msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentType);
-                charSetEncoding = BuilderUtil.getCharSetEncoding(contentType);
-            }
-            msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
-            try {
-                RESTUtil.dispatchAndVerify(msgContext);
-            } catch (AxisFault e1) {
-                LOGGER.error("Error while building message for REST_URL request", e1);
-            }
-
-            try {
-                /**
-                 * This reverseProxyMode was introduce to avoid the LB exposing
-                 * it's own web service when REST call was initiated.
-                 */
-                boolean reverseProxyMode = PassThroughConfiguration.getInstance().isReverseProxyMode();
-                AxisService axisService = null;
-                if (!reverseProxyMode) {
-                    RequestURIBasedDispatcher requestDispatcher = new RequestURIBasedDispatcher();
-                    axisService = requestDispatcher.findService(msgContext);
-                }
-
-                // the logic determines which service dispatcher to get invoke,
-                // this will be determine
-                // based on parameter defines at disableRestServiceDispatching,
-                // and if super tenant invoke, with isTenantRequest
-                // identifies whether the request to be dispatch to custom REST
-                // Dispatcher Service.
-
-                boolean isCustomRESTDispatcher = false;
-                String requestURI = (String) incomingCarbonMsg.getProperty("TO");
-                if (requestURI.matches(NettyConfiguration.getInstance().getRestUriApiRegex())
-                        || requestURI.matches(NettyConfiguration.getInstance().getRestUriProxyRegex())) {
-                    isCustomRESTDispatcher = true;
-                }
-
-                if (!isCustomRESTDispatcher) {
-                    if (axisService == null) {
-                        String defaultSvcName = NettyConfiguration.getInstance()
-                                .getPassThroughDefaultServiceName();
-                        axisService = msgContext.getConfigurationContext().getAxisConfiguration().
-                                getService(defaultSvcName);
-                        msgContext.setAxisService(axisService);
-                    }
-                } else {
-                    String multiTenantDispatchService = NettyConfiguration.getInstance().getRESTDispatchService();
-                    axisService = msgContext.getConfigurationContext().getAxisConfiguration()
-                            .getService(multiTenantDispatchService);
-                    msgContext.setAxisService(axisService);
-                }
-            } catch (AxisFault e) {
-                handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
-                        + " request for : " + incomingCarbonMsg.getProperty("TO"), e);
-            }
-
-            try {
-                soapEnvelope = TransportUtils.createSOAPMessage(msgContext, null, contentType);
-            } catch (Exception e) {
-                LOGGER.error("Error while building message for REST_URL request");
-            }
-            msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
-        }
-        return soapEnvelope;
-    }
+//    public void processNonEntityEnclosingRESTHandler(SOAPEnvelope soapEnvelope, MessageContext msgContext,
+//                                                     boolean injectToAxis2Engine) {
+//
+//        String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
+//        if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
+//            soapAction = soapAction.substring(1, soapAction.length() - 1);
+//        }
+//
+//        msgContext.setSoapAction(soapAction);
+//        msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
+//        msgContext.setServerSide(true);
+//        msgContext.setDoingREST(true);
+//        if (!isEntityEnclosing(incomingCarbonMsg)) {
+//            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
+//        }
+//
+//        try {
+//            if (soapEnvelope == null) {
+//                msgContext.setEnvelope(new SOAP11Factory().getDefaultEnvelope());
+//            } else {
+//                msgContext.setEnvelope(soapEnvelope);
+//            }
+//
+//            if (injectToAxis2Engine) {
+//                AxisEngine.receive(msgContext);
+//            }
+//        } catch (AxisFault axisFault) {
+//            handleException("Error processing " + incomingCarbonMsg.getHttpMethod() +
+//                    " request for : " + incomingCarbonMsg.getProperty("TO"), axisFault);
+//        } catch (Exception e) {
+//            String encodedURL = StringEscapeUtils.escapeHtml((String) incomingCarbonMsg.getProperty("TO"));
+//            handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+//                    + " request for : " + encodedURL + ". ", e);
+//        }
+//    }
+//
+//    /**
+//     * Method will setup the necessary parameters for the rest url post action.
+//     *
+//     * @param contentTypeHdr
+//     * @param msgContext
+//     * @return SOAPEnvelope
+//     * @throws FactoryConfigurationError
+//     */
+//    public SOAPEnvelope handleRESTUrlPost(String contentTypeHdr, MessageContext msgContext)
+//            throws FactoryConfigurationError {
+//
+//        SOAPEnvelope soapEnvelope = null;
+//        String contentType = contentTypeHdr != null ? TransportUtils.getContentType(contentTypeHdr, msgContext) : null;
+//
+//        if (contentType == null || contentType.isEmpty()) {
+//            if (HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty("HTTP_METHOD")) || "DELETE"
+//                    .equals(msgContext.getProperty("HTTP_METHOD"))) {
+//                contentType = HTTPConstants.MEDIA_TYPE_X_WWW_FORM;
+//            } else {
+//                // When POST request doesn't contain a Content-Type,
+//                // recipient should consider it as application/octet-stream (rfc2616)
+//                // Temp fix for https://github.com/wso2/product-ei/issues/2001
+//                contentType = PassThroughConstants.APPLICATION_OCTET_STREAM;
+//            }
+//        }
+//        if (HTTPConstants.MEDIA_TYPE_X_WWW_FORM.equals(contentType)
+//                || (PassThroughConstants.APPLICATION_OCTET_STREAM.equals(contentType) && contentTypeHdr == null)) {
+//            msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty("TO")));
+//            String charSetEncoding;
+//            if (contentTypeHdr != null) {
+//                msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentTypeHdr);
+//                charSetEncoding = BuilderUtil.getCharSetEncoding(contentTypeHdr);
+//            } else {
+//                msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentType);
+//                charSetEncoding = BuilderUtil.getCharSetEncoding(contentType);
+//            }
+//            msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
+//            try {
+//                RESTUtil.dispatchAndVerify(msgContext);
+//            } catch (AxisFault e1) {
+//                LOGGER.error("Error while building message for REST_URL request", e1);
+//            }
+//
+//            try {
+//                /**
+//                 * This reverseProxyMode was introduce to avoid the LB exposing
+//                 * it's own web service when REST call was initiated.
+//                 */
+//                boolean reverseProxyMode = PassThroughConfiguration.getInstance().isReverseProxyMode();
+//                AxisService axisService = null;
+//                if (!reverseProxyMode) {
+//                    RequestURIBasedDispatcher requestDispatcher = new RequestURIBasedDispatcher();
+//                    axisService = requestDispatcher.findService(msgContext);
+//                }
+//
+//                // the logic determines which service dispatcher to get invoke,
+//                // this will be determine
+//                // based on parameter defines at disableRestServiceDispatching,
+//                // and if super tenant invoke, with isTenantRequest
+//                // identifies whether the request to be dispatch to custom REST
+//                // Dispatcher Service.
+//
+//                boolean isCustomRESTDispatcher = false;
+//                String requestURI = (String) incomingCarbonMsg.getProperty("TO");
+//                if (requestURI.matches(NettyConfiguration.getInstance().getRestUriApiRegex())
+//                        || requestURI.matches(NettyConfiguration.getInstance().getRestUriProxyRegex())) {
+//                    isCustomRESTDispatcher = true;
+//                }
+//
+//                if (!isCustomRESTDispatcher) {
+//                    if (axisService == null) {
+//                        String defaultSvcName = NettyConfiguration.getInstance()
+//                                .getPassThroughDefaultServiceName();
+//                        axisService = msgContext.getConfigurationContext().getAxisConfiguration().
+//                                getService(defaultSvcName);
+//                        msgContext.setAxisService(axisService);
+//                    }
+//                } else {
+//                    String multiTenantDispatchService = NettyConfiguration.getInstance().getRESTDispatchService();
+//                    axisService = msgContext.getConfigurationContext().getAxisConfiguration()
+//                            .getService(multiTenantDispatchService);
+//                    msgContext.setAxisService(axisService);
+//                }
+//            } catch (AxisFault e) {
+//                handleException("Error processing " + incomingCarbonMsg.getHttpMethod()
+//                        + " request for : " + incomingCarbonMsg.getProperty("TO"), e);
+//            }
+//
+//            try {
+//                soapEnvelope = TransportUtils.createSOAPMessage(msgContext, null, contentType);
+//            } catch (Exception e) {
+//                LOGGER.error("Error while building message for REST_URL request");
+//            }
+//            msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
+//        }
+//        return soapEnvelope;
+//    }
 
     public  void sendAck(MessageContext msgContext) {
         String respWritten = "";
@@ -528,25 +552,25 @@ public class HttpRequestWorker implements Runnable {
         }
     }
 
-    private String inferContentType() {
-
-        final String[] str = new String[1];
-        incomingCarbonMsg.getHeaders().forEach(entry -> {
-                    if (HTTP.CONTENT_TYPE.equalsIgnoreCase(entry.getKey())) {
-                        str[0] = incomingCarbonMsg.getHeaders().get(entry.getKey());
-                    }
-                }
-        );
-        if (str[0] != null) {
-            return str[0];
-        }
-        Parameter param = configurationContext.getAxisConfiguration().
-                getParameter(PassThroughConstants.REQUEST_CONTENT_TYPE);
-        if (param != null) {
-            return param.getValue().toString();
-        }
-        return null;
-    }
+//    private String inferContentType() {
+//
+//        final String[] str = new String[1];
+//        incomingCarbonMsg.getHeaders().forEach(entry -> {
+//                    if (HTTP.CONTENT_TYPE.equalsIgnoreCase(entry.getKey())) {
+//                        str[0] = incomingCarbonMsg.getHeaders().get(entry.getKey());
+//                    }
+//                }
+//        );
+//        if (str[0] != null) {
+//            return str[0];
+//        }
+//        Parameter param = configurationContext.getAxisConfiguration().
+//                getParameter(PassThroughConstants.REQUEST_CONTENT_TYPE);
+//        if (param != null) {
+//            return param.getValue().toString();
+//        }
+//        return null;
+//    }
 
     private boolean isRest(String contentType) {
 

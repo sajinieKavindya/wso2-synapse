@@ -295,7 +295,7 @@ public class ServerWorker implements Runnable {
 	        	log.error("Error while building message for REST_URL request");
 	        }
 	       //msgContext.setProperty(Constants.Configuration.CONTENT_TYPE,"application/xml");  
-	       msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE,HTTPConstants.MEDIA_TYPE_APPLICATION_XML);   
+	       msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
 	    }
 	    return soapEnvelope;
     }

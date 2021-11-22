@@ -20,6 +20,7 @@ package org.apache.synapse.transport.netty.config;
 
 import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.log4j.Logger;
+import org.apache.synapse.transport.passthru.ConnectCallback;
 import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.config.PassThroughConfigPNames;
@@ -57,6 +58,11 @@ public class NettyConfiguration {
     private static final String REST_URI_PROXY_REGEX = "rest_uri_proxy_regex";
     // properties which are allowed to be directly pass through from request context to response context explicitly
     private static final String ALLOWED_RESPONSE_PROPERTIES = "allowed_response_properties";
+    private static final String REQUEST_LIMIT_VALIDATION = "http.requestLimits.validation.enabled";
+    private static final String MAX_STATUS_LINE_LENGTH = "http.requestLimits.maxStatusLineLength";
+    private static final String MAX_HEADER_SIZE = "http.requestLimits.maxHeaderSize";
+    private static final String MAX_ENTITY_BODY_SIZE = "http.requestLimits.maxEntityBodySize";
+    private static final String HTTP_SOCKET_TIMEOUT = "http.socket.timeout";
 
     private Boolean isKeepAliveDisabled = null;
     private Boolean reverseProxyMode = null;
@@ -127,6 +133,26 @@ public class NettyConfiguration {
 
     public String getRestUriProxyRegex() {
         return ConfigurationBuilderUtil.getStringProperty(REST_URI_PROXY_REGEX, "", props);
+    }
+
+    public boolean isRequestLimitsValidationEnabled() {
+        return ConfigurationBuilderUtil.getBooleanProperty(REQUEST_LIMIT_VALIDATION, false, props);
+    }
+
+    public int getMaxStatusLineLength() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_STATUS_LINE_LENGTH, 4096, props);
+    }
+
+    public int getMaxHeaderSize() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_HEADER_SIZE, 8192, props);
+    }
+
+    public int getMaxEntityBodySize() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_ENTITY_BODY_SIZE, -1, props);
+    }
+
+    public int getSocketTimeout() {
+        return ConfigurationBuilderUtil.getIntProperty(HTTP_SOCKET_TIMEOUT, 180000, props);
     }
 
     public boolean isKeepAliveDisabled() {

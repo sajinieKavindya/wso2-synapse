@@ -226,7 +226,7 @@ public class HttpOutboundRequest {
         RequestResponseUtils.addExcessHeaders(msgCtx, outboundRequest);
         setContentTypeHeaderIfApplicable(msgCtx, outboundRequest);
         setWSAActionIfApplicable(msgCtx, outboundRequest);
-        setKeepAliveHeader(msgCtx, outboundRequest);
+        setKeepAliveConfig(msgCtx);
     }
 
     private void setHostHeader(String host, int port, HttpCarbonMessage outboundRequest, MessageContext msgCtx) {
@@ -304,16 +304,10 @@ public class HttpOutboundRequest {
         }
     }
 
-    private void setKeepAliveHeader(MessageContext msgContext, HttpCarbonMessage outboundRequest) {
+    private void setKeepAliveConfig(MessageContext msgContext) {
         String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
-        if (org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
-                || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
-            keepAlive = false;
-            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
-        } else {
-            keepAlive = true;
-            outboundRequest.setHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_KEEP_ALIVE);
-        }
+        keepAlive = !org.apache.axis2.Constants.VALUE_TRUE.equals(noKeepAlive)
+                && !PassThroughConfiguration.getInstance().isKeepAliveDisabled();
     }
 
     private void setWSAActionIfApplicable(MessageContext msgCtx, HttpCarbonMessage httpCarbonMessage) {
