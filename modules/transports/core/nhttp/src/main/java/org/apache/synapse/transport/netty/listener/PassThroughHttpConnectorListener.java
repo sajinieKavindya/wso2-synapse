@@ -27,8 +27,9 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 
 /**
- * {@code ConnectorListenerToAxisBridge} receives the {@code HttpCarbonMessage} coming from the Netty HTTP transport,
- * converts them to {@code MessageContext} and finally deliver them to the axis engine.
+ * {@code PassThroughHttpConnectorListener} receives the {@code HttpCarbonMessage} coming from the Netty HTTP transport,
+ * hands it over to the {@code HttpRequestWorker} to convert it to {@code MessageContext} and finally deliver it
+ * to the axis engine.
  */
 public class PassThroughHttpConnectorListener implements HttpConnectorListener {
 
@@ -43,8 +44,9 @@ public class PassThroughHttpConnectorListener implements HttpConnectorListener {
 
     public void onMessage(HttpCarbonMessage httpCarbonMessage) {
 
-        LOGGER.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Message received to HTTP transport, submitting "
-                + "a worker to the pool to process");
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Message received to HTTP transport, submitting a worker to the pool to process the request.");
+        }
         WorkerPool workerPool = sourceConfiguration.getWorkerPool();
         workerPool.execute(new HttpRequestWorker(httpCarbonMessage, sourceConfiguration));
     }

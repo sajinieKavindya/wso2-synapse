@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import javax.xml.stream.XMLStreamException;
 
 /**
@@ -172,7 +173,8 @@ public class FailoverEndpoint extends AbstractEndpoint {
                     		 pipe.forceSetSerializationRest();
                     	}
                     	//allow the message to be content aware if the given message comes via PT
-						if (axisMC.getProperty(PassThroughConstants.PASS_THROUGH_PIPE) != null) {
+						if (axisMC.getProperty(PassThroughConstants.PASS_THROUGH_PIPE) != null
+                                || Objects.nonNull(axisMC.getProperty("HTTP_CARBON_MESSAGE"))) {
 							((AbstractEndpoint) endpoint).setContentAware(true);
 							((AbstractEndpoint) endpoint).setForceBuildMC(true);
 

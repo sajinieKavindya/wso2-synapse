@@ -97,8 +97,6 @@ public class RelayUtils {
     public static void buildMessage(MessageContext messageContext, boolean earlyBuild)
             throws IOException, XMLStreamException {
 
-        final Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
-
         if (messageContext.getProperty(Constants.Configuration.CONTENT_TYPE) != null) {
             if (log.isDebugEnabled()) {
                 log.debug("Content Type is " + messageContext.getProperty(Constants.Configuration.CONTENT_TYPE));
@@ -106,6 +104,7 @@ public class RelayUtils {
 
             if (!Boolean.TRUE.equals(messageContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED))
                     && forcePTBuild) {
+                final Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
                 if (pipe != null) {
                     InputStream in = pipe.getInputStream();
 

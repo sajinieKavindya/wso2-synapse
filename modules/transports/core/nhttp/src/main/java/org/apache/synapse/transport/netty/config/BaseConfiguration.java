@@ -86,7 +86,7 @@ public abstract class BaseConfiguration {
     }
 
     /**
-     * Populate preserve http headers from comma separate string
+     * Populate preserve http headers from comma separate string.
      *
      * @param preserveHeaders Comma separated preserve enable http headers
      */
@@ -95,7 +95,7 @@ public abstract class BaseConfiguration {
         preserveHttpHeaders = new ArrayList<String>();
         if (preserveHeaders != null && !preserveHeaders.isEmpty()) {
             String[] presHeaders = preserveHeaders.trim().toUpperCase().split(",");
-            if (presHeaders != null && presHeaders.length > 0) {
+            if (presHeaders.length > 0) {
                 preserveHttpHeaders.addAll(Arrays.asList(presHeaders));
             }
         }

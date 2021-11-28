@@ -33,11 +33,12 @@ import java.util.List;
  */
 public class Axis2HttpSSLTransportListener extends Axis2HttpTransportListener {
 
-    private List<MessagingHandler> messagingHandlers;
-    public Axis2HttpSSLTransportListener() {}
+    public Axis2HttpSSLTransportListener() {
+        super();
+    }
 
     public Axis2HttpSSLTransportListener(List<MessagingHandler> messagingHandlers) {
-        this.messagingHandlers = messagingHandlers;
+        super(messagingHandlers);
     }
 
     protected Scheme initScheme() {

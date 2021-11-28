@@ -562,16 +562,16 @@ public class SynapseCallbackReceiver extends CallbackReceiver {
                         (String) key, synapseOutMsgCtx.getProperty((String) key));
             }
 
-            if (successfulEndpoint instanceof OAuthConfiguredHTTPEndpoint) {
-
-                OAuthConfiguredHTTPEndpoint httpEndpoint = (OAuthConfiguredHTTPEndpoint) successfulEndpoint;
-
-                if (originalMC != null && OAuthUtils.retryOnOAuthFailure(httpEndpoint, synapseInMessageContext,
-                        synapseOutMsgCtx)) {
-                    httpEndpoint.retryCallWithNewToken(originalMC);
-                    return;
-                }
-            }
+//            if (successfulEndpoint instanceof OAuthConfiguredHTTPEndpoint) {
+//
+//                OAuthConfiguredHTTPEndpoint httpEndpoint = (OAuthConfiguredHTTPEndpoint) successfulEndpoint;
+//
+//                if (originalMC != null && OAuthUtils.retryOnOAuthFailure(httpEndpoint, synapseInMessageContext,
+//                        synapseOutMsgCtx)) {
+//                    httpEndpoint.retryCallWithNewToken(originalMC);
+//                    return;
+//                }
+//            }
 
             // Copy SequenceCallStack from original MC to the new MC
             Boolean isContinuationCall =

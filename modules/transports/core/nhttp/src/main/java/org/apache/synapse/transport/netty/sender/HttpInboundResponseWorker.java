@@ -156,7 +156,7 @@ public class HttpInboundResponseWorker implements Runnable {
         responseMsgCtx.setTransportOut(requestMsgCtx.getTransportOut());
 
         responseMsgCtx.setProperty(PassThroughConstants.INVOKED_REST, requestMsgCtx.isDoingREST());
-        responseMsgCtx.setProperty(PassThroughConstants.ORIGINAL_HTTP_SC, httpResponse.getHttpStatusCode());
+        responseMsgCtx.setProperty(PassThroughConstants.ORIGINAL_HTTP_SC, statusCode);
         responseMsgCtx.setProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE, httpResponse.getReasonPhrase());
 
         responseMsgCtx.setAxisMessage(requestMsgCtx.getOperationContext().getAxisOperation().
@@ -214,9 +214,8 @@ public class HttpInboundResponseWorker implements Runnable {
             }
 
             // Set status code
-            responseMsgCtx.setProperty(BridgeConstants.HTTP_STATUS_CODE_PROP, statusCode);
-            responseMsgCtx.setProperty(BridgeConstants.HTTP_STATUS_CODE_DESCRIPTION_PROP,
-                    httpResponse.getProperty(BridgeConstants.HTTP_REASON_PHRASE));
+            responseMsgCtx.setProperty(PassThroughConstants.HTTP_SC, statusCode);
+            responseMsgCtx.setProperty(PassThroughConstants.HTTP_SC_DESC, httpResponse.getReasonPhrase());
             if (statusCode >= 400) {
                 responseMsgCtx.setProperty(PassThroughConstants.FAULT_MESSAGE,
                         PassThroughConstants.TRUE);

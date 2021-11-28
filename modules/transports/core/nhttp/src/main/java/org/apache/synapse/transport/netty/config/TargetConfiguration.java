@@ -32,6 +32,9 @@ public class TargetConfiguration extends BaseConfiguration {
 
     public void build() throws AxisFault {
         super.build();
+        preserveUserAgentHeader = conf.isPreserveUserAgentHeader();
+        preserveServerHeader = conf.isPreserveServerHeader();
+        populatePreserveHttpHeaders(conf.getPreserveHttpHeaders());
     }
 
     public List<MessagingHandler> getMessagingHandlers() {

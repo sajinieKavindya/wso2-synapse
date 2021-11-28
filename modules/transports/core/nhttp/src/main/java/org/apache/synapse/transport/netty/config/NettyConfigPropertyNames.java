@@ -121,4 +121,6 @@ public class NettyConfigPropertyNames {
 
     public static final String HTTP_GET_REQUEST_PROCESSOR = "http.get.request.processor";
 
+    public static final String HTTP_TRANSPORT_MEDIATION_INTERCEPTOR = "http.transport.mediation.interceptor";
+
 }

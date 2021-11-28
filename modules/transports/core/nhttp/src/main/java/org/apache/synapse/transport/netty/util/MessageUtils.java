@@ -43,17 +43,20 @@ import org.apache.axis2.transport.http.XFormURLEncodedFormatter;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 
-import javax.xml.stream.XMLStreamException;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Objects;
+import javax.xml.stream.XMLStreamException;
 
 /**
  * Class MessageUtils contains helper methods that are used to build the payload.
@@ -66,18 +69,41 @@ public class MessageUtils {
 
     private static volatile Handler addressingInHandler = null;
 
+    private static Boolean forcePTBuild = true;
+
     private static boolean forceXmlValidation = false;
 
     private static boolean forceJSONValidation = false;
 
     static {
+        forcePTBuild = NettyConfiguration.getInstance().getBooleanProperty(
+                PassThroughConstants.FORCE_PASSTHROUGH_BUILDER, true);
         forceXmlValidation = PassThroughConfiguration.getInstance().isForcedXmlMessageValidationEnabled();
         forceJSONValidation = PassThroughConfiguration.getInstance().isForcedJSONMessageValidationEnabled();
+    }
+
+    public static void buildMessage(MessageContext msgCtx)
+            throws IOException, XMLStreamException {
+
+        buildMessage(msgCtx, false);
     }
 
     public static void buildMessage(MessageContext msgCtx, boolean earlyBuild) throws IOException {
 
         if (Boolean.TRUE.equals(msgCtx.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
+            return;
+        }
+
+        if (msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE) == null) {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Content Type is null and the message is not build");
+            }
+            msgCtx.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED,
+                    Boolean.TRUE);
+            return;
+        }
+
+        if (Objects.isNull(msgCtx.getProperty("HTTP_CARBON_MESSAGE")) || !forcePTBuild) {
             return;
         }
 
@@ -115,11 +141,28 @@ public class MessageUtils {
             in =  new ByteArrayInputStream(byteArrayOutputStream.toByteArray());
         }
 
-        // TODO: implement earlyBuild
+        BufferedInputStream bufferedInputStream = (BufferedInputStream) msgCtx
+                .getProperty(PassThroughConstants.BUFFERED_INPUT_STREAM);
+        if (bufferedInputStream != null) {
+            try {
+                bufferedInputStream.reset();
+                bufferedInputStream.mark(0);
+            } catch (Exception e) {
+                // just ignore the error
+            }
+
+        } else {
+            bufferedInputStream = new BufferedInputStream(in);
+            // TODO: need to handle properly for the moment lets use around 100k
+            // buffer.
+            bufferedInputStream.mark(128 * 1024);
+            msgCtx.setProperty(PassThroughConstants.BUFFERED_INPUT_STREAM,
+                    bufferedInputStream);
+        }
 
         OMElement element = null;
         try {
-            element = messageBuilder.getDocument(msgCtx, in);
+            element = messageBuilder.getDocument(msgCtx, bufferedInputStream);
             if (element != null) {
                 msgCtx.setEnvelope(TransportUtils.createSOAPEnvelope(element));
                 msgCtx.setProperty(DeferredMessageBuilder.RELAY_FORMATTERS_MAP,

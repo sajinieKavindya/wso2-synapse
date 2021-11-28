@@ -169,6 +169,27 @@ public class NettyConfiguration {
 
     }
 
+    public String getHttpTransportMediationInterceptorClass() {
+        return ConfigurationBuilderUtil
+                .getStringProperty(NettyConfigPropertyNames.HTTP_TRANSPORT_MEDIATION_INTERCEPTOR, "", props);
+
+    }
+
+    public boolean isPreserveUserAgentHeader() {
+        return ConfigurationBuilderUtil.getBooleanProperty(PassThroughConfigPNames.USER_AGENT_HEADER_PRESERVE,
+                false, props);
+    }
+
+    public boolean isPreserveServerHeader() {
+        return ConfigurationBuilderUtil.getBooleanProperty(PassThroughConfigPNames.SERVER_HEADER_PRESERVE,
+                false, props);
+    }
+
+    public String getPreserveHttpHeaders() {
+        return ConfigurationBuilderUtil.getStringProperty(PassThroughConfigPNames.HTTP_HEADERS_PRESERVE,
+                "", props);
+    }
+
     /**
      * Get the default synapse service name.
      *
@@ -238,5 +259,21 @@ public class NettyConfiguration {
             }
         }
         return properties;
+    }
+
+    public Boolean getBooleanProperty(String name) {
+        return ConfigurationBuilderUtil.getBooleanProperty(name, null, props);
+    }
+
+    public Boolean getBooleanProperty(String name, Boolean def) {
+        return ConfigurationBuilderUtil.getBooleanProperty(name, def, props);
+    }
+
+    public Integer getIntProperty(String name, Integer def) {
+        return ConfigurationBuilderUtil.getIntProperty(name, def, props);
+    }
+
+    public String getStringProperty(String name, String def) {
+        return ConfigurationBuilderUtil.getStringProperty(name, def, props);
     }
 }

@@ -32,6 +32,8 @@ import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageProcessorSelector;
 import org.apache.http.protocol.HTTP;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.NettyConfiguration;
+import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.netty.util.DataHolder;
 import org.apache.synapse.transport.netty.util.RequestResponseUtils;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
@@ -68,7 +70,11 @@ public class HttpOutboundRequest {
 
     private HttpCarbonMessage httpCarbonMessage;
 
-    public HttpOutboundRequest(MessageContext msgContext, URL url) throws AxisFault {
+    private TargetConfiguration targetConfiguration;
+
+    public HttpOutboundRequest(MessageContext msgContext, URL url, TargetConfiguration targetConfiguration)
+            throws AxisFault {
+        this.targetConfiguration = targetConfiguration;
         httpCarbonMessage = new HttpCarbonMessage(new DefaultHttpRequest(HttpVersion.HTTP_1_1,
                 HttpMethod.POST, ""));
 
@@ -224,7 +230,7 @@ public class HttpOutboundRequest {
         setHostHeader(host, port, outboundRequest, msgCtx);
         RequestResponseUtils.addTransportHeaders(msgCtx, outboundRequest);
         RequestResponseUtils.addExcessHeaders(msgCtx, outboundRequest);
-        setContentTypeHeaderIfApplicable(msgCtx, outboundRequest);
+        setContentTypeHeaderIfApplicable(msgCtx, outboundRequest, targetConfiguration);
         setWSAActionIfApplicable(msgCtx, outboundRequest);
         setKeepAliveConfig(msgCtx);
     }
@@ -252,11 +258,12 @@ public class HttpOutboundRequest {
         }
     }
 
-    private void setContentTypeHeaderIfApplicable(MessageContext msgCtx, HttpCarbonMessage outboundRequest)
+    private void setContentTypeHeaderIfApplicable(MessageContext msgCtx, HttpCarbonMessage outboundRequest,
+                                                  TargetConfiguration targetConfiguration)
             throws AxisFault {
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
         String cType = RequestResponseUtils.getContentType(msgCtx,
-                DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE), transportHeaders);
+                targetConfiguration.isPreserveHttpHeader(HTTP.CONTENT_TYPE), transportHeaders);
         if (cType != null
                 && !HTTPConstants.HTTP_METHOD_GET.equals((String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD))
                 && shouldOverwriteContentType(msgCtx, outboundRequest)) {

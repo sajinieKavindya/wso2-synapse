@@ -24,6 +24,7 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.util.AttributeKey;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axiom.soap.SOAP11Constants;
 import org.apache.axiom.soap.SOAP12Constants;
@@ -39,6 +40,7 @@ import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.RequestResponseTransport;
 import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.TransportUtils;
+import org.apache.axis2.transport.base.BaseConstants;
 import org.apache.axis2.transport.base.ParamUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
@@ -81,7 +83,7 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 /**
- * {@code RequestUtils} contains utilities used in request message flow.
+ * {@code RequestUtils} contains utilities used in request and response message flow.
  */
 public class RequestResponseUtils {
 
@@ -92,7 +94,7 @@ public class RequestResponseUtils {
      * process of being streamed.
      *
      * @param incomingCarbonMsg the http carbon message to be used to create the corresponding Axis2 message context
-     * @param sourceConfiguration description of the incoming transport
+     * @param sourceConfiguration source configuration
      * @return the Axis2 message context created
      */
     public static MessageContext convertCarbonMsgToAxis2MsgCtx(HttpCarbonMessage incomingCarbonMsg,
@@ -103,12 +105,13 @@ public class RequestResponseUtils {
         //TODO: once the correlation id support is brought, the correlationID should be set as the messageID.
         // Refer to https://github.com/wso2-support/wso2-synapse/commit/2c86e14151d48ae3bb814be19b874800bd7468e5
         msgCtx.setMessageID(UIDGenerator.generateURNString());
-        msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING, Boolean.FALSE);
+
+        //TODO: set correlation id here
+        msgCtx.setProperty(BaseConstants.INTERNAL_TRANSACTION_COUNTED, incomingCarbonMsg.getSourceContext().channel()
+                        .attr(AttributeKey.valueOf(BaseConstants.INTERNAL_TRANSACTION_COUNTED)).get());
+
         ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
         msgCtx.setConfigurationContext(configurationContext);
-
-        //TODO: set correlation id
-        //TODO: set transaction id
 
         if (sourceConfiguration.getScheme().isSSL()) {
             msgCtx.setTransportOut(configurationContext.getAxisConfiguration()
@@ -126,6 +129,7 @@ public class RequestResponseUtils {
 
         msgCtx.setServerSide(true);
         msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, incomingCarbonMsg.getProperty("TO"));
+        msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING, Boolean.FALSE);
 
         // Following section is required for throttling to work
         msgCtx.setProperty(MessageContext.REMOTE_ADDR, incomingCarbonMsg.getProperty(
@@ -150,463 +154,10 @@ public class RequestResponseUtils {
 
         // Set the original incoming carbon message as a property
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, incomingCarbonMsg);
+        // This property is used when responding back to the client
         msgCtx.setProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE, incomingCarbonMsg);
         return msgCtx;
     }
-
-    public static HttpCarbonMessage convertAxis2MsgCtxToCarbonMsg(MessageContext msgCtx) {
-
-        boolean isRequest = isRequest(msgCtx);
-        Object httpMethodProperty = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
-
-        if (Objects.isNull(httpMethodProperty)) {
-            LOGGER.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
-            isRequest = false;
-        }
-
-        HttpCarbonMessage outboundHttpCarbonMessage;
-        if (isRequest) {
-            // Request
-            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
-            HttpMethod httpMethod = new HttpMethod((String) httpMethodProperty);
-            outboundHttpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
-        } else {
-            // Response
-            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
-            outboundHttpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
-        }
-
-        Map<String, String> headers = (Map<String, String>) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
-
-        headers.forEach(outboundHttpCarbonMessage::setHeader);
-
-        HttpCarbonMessage originalHttpCarbonMessage =
-                (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-
-//         Map<String, Object> originalProperties = originalHttpCarbonMessage.getProperties();
-//         originalProperties.forEach(outboundHttpCarbonMessage::setProperty);
-
-        return outboundHttpCarbonMessage;
-    }
-
-    public static HttpCarbonMessage createOutboundCarbonMsg(HttpCarbonMessage inboundCarbonMsg, MessageContext msgCtx) {
-
-        boolean isRequest = isRequest(msgCtx);
-        HttpMethod httpMethod = null;
-        if (msgCtx.getProperty(BridgeConstants.HTTP_METHOD) != null) {
-            httpMethod = new HttpMethod((String) msgCtx.getProperty(BridgeConstants.HTTP_METHOD));
-        } else {
-            LOGGER.warn(BridgeConstants.BRIDGE_LOG_PREFIX + "HttpMethod not found in Axis2MessageContext");
-            isRequest = false;
-        }
-
-        HttpCarbonMessage outboundHttpCarbonMessage;
-
-        if (isRequest) {
-            // Request
-            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Request");
-            outboundHttpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpRequest(HttpVersion.HTTP_1_1, httpMethod, ""));
-        } else {
-            // Response
-            LOGGER.info(BridgeConstants.BRIDGE_LOG_PREFIX + "Response");
-            outboundHttpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
-        }
-
-        Map<String, String> headers = (Map<String, String>) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
-
-        headers.forEach(outboundHttpCarbonMessage::setHeader);
-
-//        EntityCollector blockingEntityCollector = inboundCarbonMsg.getBlockingEntityCollector();
-//        outboundHttpCarbonMessage.setBlockingEntityCollector((BlockingEntityCollector) blockingEntityCollector);
-
-        HttpContent httpContent = inboundCarbonMsg.getHttpContent();
-        outboundHttpCarbonMessage.addHttpContent(httpContent);
-
-        return outboundHttpCarbonMessage;
-    }
-
-//    public static HttpCarbonMessage createOutboundResponse(HttpCarbonMessage inboundCarbonMsg,
-//                                                           MessageContext msgContext) throws AxisFault {
-//        // set http version
-//        HttpVersion version = determineHttpVersion(msgContext);
-//
-//        // set status
-//        int statusCode = determineHttpStatusCode(msgContext);
-//
-//        // set status line
-//        String statusLine = determineHttpStatusLine(msgContext, statusCode);
-//
-//        SourceResponseDelete sourceResponseDelete = new SourceResponseDelete(version, statusCode, statusLine);
-//        Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
-//
-//        // set any transport headers
-//        Map transportHeaders = (Map) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
-//        if (transportHeaders != null) {
-//            if (Objects.nonNull(msgContext.getProperty(Constants.Configuration.MESSAGE_TYPE))) {
-//                if (msgContext.getProperty(Constants.Configuration.CONTENT_TYPE) != null
-//                        && msgContext.getProperty(Constants.Configuration.CONTENT_TYPE).toString()
-//                        .contains(PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED)
-//                        && !DataHolder.getInstance().isPreserveHttpHeader(Constants.Configuration.MESSAGE_TYPE)) {
-//                    transportHeaders.put(Constants.Configuration.MESSAGE_TYPE,
-//                            PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED);
-//                } else {
-//                    Pipe pipe = (Pipe) msgContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
-//                    if (pipe != null
-//                            && !Boolean.TRUE.equals(msgContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED))
-//                            && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
-//                        transportHeaders.put(HTTP.CONTENT_TYPE,
-//                                msgContext.getProperty(Constants.Configuration.CONTENT_TYPE));
-//                    }
-//                }
-//            }
-//        } else if (noEntityBody == null || Boolean.FALSE == noEntityBody) {
-//            OMOutputFormat format = NhttpUtil.getOMOutputFormat(msgContext);
-//            transportHeaders = new HashMap();
-//            MessageFormatter messageFormatter =
-//                    MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgContext);
-//            if (Objects.isNull(msgContext.getProperty(Constants.Configuration.MESSAGE_TYPE))
-//                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)
-//                    && Objects.nonNull(messageFormatter)) {
-//                transportHeaders.put(HTTP.CONTENT_TYPE,
-//                        messageFormatter.getContentType(msgContext, format, msgContext.getSoapAction()));
-//            }
-//        }
-//
-//        addTransportHeadersToResponse(sourceResponseDelete, transportHeaders);
-//
-//        // Add excess transport headers.
-//        Map excessHeaders = (Map) msgContext.getProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS);
-//        addExcessHeadersToResponse(sourceResponseDelete, excessHeaders);
-//
-////        Boolean noEntityBody = (Boolean) msgContext.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-////
-////        if (noEntityBody != null && Boolean.TRUE == noEntityBody) {
-////            sourceResponse.removeHeader(HTTP.CONTENT_TYPE);
-////            return;
-////        }
-//
-//        // set content length
-////        if (canResponseHaveBody(inboundCarbonMsg.getHttpMethod(), statusCode)) {
-////            setContentLengthHeader(msgContext, inboundCarbonMsg.getHttpMethod(), sourceResponse);
-////        }
-//        try {
-//            setContentLengthHeader(msgContext, inboundCarbonMsg.getHttpMethod(), sourceResponseDelete);
-//        } catch (IOException e) {
-//            String msg = "Failed to submit the response";
-//            LOGGER.error(msg, e);
-//            throw new AxisFault(msg, e);
-//        }
-//
-//        // set chunking status
-//        if (canResponseHaveBody(inboundCarbonMsg.getHttpMethod(), statusCode)) {
-//            long contentLength = -1;
-//
-//            String contentLengthHeader;
-//            for (String header : sourceResponseDelete.getHeaders().keySet()) {
-//                if (HTTP.CONTENT_LEN.equalsIgnoreCase(header)) {
-//                    contentLengthHeader = sourceResponseDelete.getHeader(header).first();
-//                    contentLength = Long.parseLong(contentLengthHeader);
-//                    sourceResponseDelete.removeHeader(header);
-//                    break;
-//                }
-//            }
-//
-//            if (contentLength != -1) {
-//                sourceResponseDelete.setChunked(false);
-//                sourceResponseDelete.addHeader(BridgeConstants.CONTENT_LEN, String.valueOf(contentLength));
-//            } else {
-//                sourceResponseDelete.setChunked(true);
-//            }
-//        }
-//
-//        // set Connection keep alive header
-//        boolean keepAlive = true;
-//        String noKeepAlive = (String) msgContext.getProperty(PassThroughConstants.NO_KEEPALIVE);
-//        if ("true".equals(noKeepAlive) || PassThroughConfiguration.getInstance().isKeepAliveDisabled()) {
-//            keepAlive = false;
-//        } else if (inboundCarbonMsg.getHttpMethod() != null
-//                && isPayloadOptionalMethod(inboundCarbonMsg.getHttpMethod().toUpperCase())
-//                && (inboundCarbonMsg.getHeaders().contains(HTTP.CONTENT_LEN)
-//                || inboundCarbonMsg.getHeaders().contains(HTTP.TRANSFER_ENCODING))) {
-//            // If the payload is delayed for GET/HEAD/DELETE, http-core-nio will start processing request, without
-//            // waiting for the payload. Therefore the delayed payload will be appended to the next request. To avoid
-//            // that, disable keep-alive to avoid re-using the existing connection by client for the next request.
-//            if (LOGGER.isDebugEnabled()) {
-//                LOGGER.debug("Disable keep-alive in the client connection : Content-length/Transfer-encoding " +
-//                        "headers present for GET/HEAD/DELETE request");
-//            }
-//            keepAlive = false;
-//        }
-//        if (!keepAlive) {
-//            sourceResponseDelete.addHeader(HTTP.CONN_DIRECTIVE, HTTP.CONN_CLOSE);
-//        }
-//
-//        if (!Boolean.TRUE.equals(msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY))
-//                && Boolean.TRUE.equals(msgContext.isPropertyTrue(PassThroughConstants.MESSAGE_BUILDER_INVOKED))) {
-//
-//            if (Constants.VALUE_TRUE.equals(msgContext.getProperty(Constants.Configuration.ENABLE_MTOM)) ||
-//                    Constants.VALUE_TRUE.equals(msgContext.getProperty(Constants.Configuration.ENABLE_SWA))) {
-//                Object contentType = msgContext.getProperty(Constants.Configuration.CONTENT_TYPE);
-//                if (Objects.isNull(contentType) ||
-//                        !((String) contentType).trim()
-//                                .startsWith(PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED)) {
-//                    msgContext.setProperty(Constants.Configuration.CONTENT_TYPE,
-//                            PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED);
-//                }
-//                msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE,
-//                        PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED);
-//            }
-//
-//            MessageFormatter formatter = MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgContext);
-//            OMOutputFormat format = PassThroughTransportUtils.getOMOutputFormat(msgContext);
-//            // set Content-Type
-//            setContentType(msgContext, sourceResponseDelete, formatter, format);
-//        }
-//
-//        return sourceResponseDelete.getResponse();
-//    }
-
-//    private static boolean isPayloadOptionalMethod(String httpMethod) {
-//
-//        return (PassThroughConstants.HTTP_GET.equals(httpMethod) ||
-//                PassThroughConstants.HTTP_HEAD.equals(httpMethod) ||
-//                PassThroughConstants.HTTP_DELETE.equals(httpMethod));
-//    }
-//
-//    private static boolean canResponseHaveBody(final String httpMethod, final int statusCode) {
-//
-//        if ("HEAD".equalsIgnoreCase(httpMethod)) {
-//            return false;
-//        }
-//        return statusCode >= HttpStatus.SC_OK
-//                && statusCode != HttpStatus.SC_NO_CONTENT
-//                && statusCode != HttpStatus.SC_NOT_MODIFIED
-//                && statusCode != HttpStatus.SC_RESET_CONTENT;
-//    }
-//
-//    private static void addTransportHeadersToResponse(SourceResponseDelete sourceResponseDelete, Map transportHeaders) {
-//
-//        if (transportHeaders != null) {
-//            for (Object entryObj : transportHeaders.entrySet()) {
-//                Map.Entry entry = (Map.Entry) entryObj;
-//                if (entry.getValue() != null && entry.getKey() instanceof String &&
-//                        entry.getValue() instanceof String) {
-//                    sourceResponseDelete.addHeader((String) entry.getKey(), (String) entry.getValue());
-//                }
-//            }
-//        }
-//    }
-//
-//    private static void addExcessHeadersToResponse(SourceResponseDelete sourceResponseDelete, Map excessHeaders) {
-//
-//        if (excessHeaders != null) {
-//            for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext(); ) {
-//                String key = (String) iterator.next();
-//                for (String excessVal : (Collection<String>) excessHeaders.get(key)) {
-//                    sourceResponseDelete.addHeader(key, (String) excessVal);
-//                }
-//            }
-//        }
-//    }
-
-//    /**
-//     * Determine the Http Status Code depending on the message type processed <br>
-//     * (normal response versus fault response) as well as Axis2 message context properties set
-//     * via Synapse configuration or MessageBuilders.
-//     *
-//     * @param msgContext the Axis2 message context
-//     * @return the HTTP status code to set in the HTTP response object
-//     * @see PassThroughConstants#FAULTS_AS_HTTP_200
-//     * @see PassThroughConstants#HTTP_SC
-//     */
-//    public static int determineHttpStatusCode(MessageContext msgContext) {
-//
-//        int httpStatus = HttpStatus.SC_OK;
-//
-//        Integer errorCode = (Integer) msgContext.getProperty(PassThroughConstants.ERROR_CODE);
-//        if (errorCode != null) {
-//            return HttpStatus.SC_BAD_GATEWAY;
-//        }
-//
-//        // if this is a dummy message to handle http 202 case with non-blocking IO
-//        // set the status code to 202
-//        if (msgContext.isPropertyTrue(PassThroughConstants.SC_ACCEPTED)) {
-//            return HttpStatus.SC_ACCEPTED;
-//        } else {
-//            Object statusCode = msgContext.getProperty(PassThroughConstants.HTTP_SC);
-//            if (statusCode != null) {
-//                try {
-//                    httpStatus = Integer.parseInt(
-//                            msgContext.getProperty(PassThroughConstants.HTTP_SC).toString());
-//                    return httpStatus;
-//                } catch (NumberFormatException e) {
-//                    LOGGER.warn("Unable to set the HTTP status code from the property "
-//                            + PassThroughConstants.HTTP_SC + " with value: " + statusCode);
-//                }
-//            }
-//
-//            // Is this a fault message?
-//            boolean handleFault = msgContext.getEnvelope() != null ?
-//                    (msgContext.getEnvelope().getBody().hasFault() || msgContext.isProcessingFault()) : false;
-//            boolean faultsAsHttp200 = false;
-//            if (msgContext.getProperty(PassThroughConstants.FAULTS_AS_HTTP_200) != null) {
-//                // shall faults be transmitted with HTTP 200
-//                faultsAsHttp200 =
-//                        PassThroughConstants.TRUE.equals(
-//                                msgContext.getProperty(PassThroughConstants.FAULTS_AS_HTTP_200).toString().toUpperCase());
-//            }
-//            // Set HTTP status code to 500 if this is a fault case and we shall not use HTTP 200
-//            if (handleFault && !faultsAsHttp200) {
-//                httpStatus = HttpStatus.SC_INTERNAL_SERVER_ERROR;
-//            }
-//        }
-//        return httpStatus;
-//    }
-//
-//    /**
-//     * Determine the Http Status Message depending on the message type processed <br>
-//     * (normal response versus fault response) as well as Axis2 message context properties set
-//     * via Synapse configuration or MessageBuilders.
-//     *
-//     * @param msgContext the Axis2 message context
-//     * @return the HTTP status message string or null
-//     * @see PassThroughConstants#FAULTS_AS_HTTP_200
-//     * @see PassThroughConstants#HTTP_SC
-//     */
-//    public static String determineHttpStatusLine(MessageContext msgContext, int statusCode) {
-//
-//        String statusLine = null;
-//        Object statusLineProperty = msgContext.getProperty(PassThroughConstants.HTTP_SC_DESC);
-//        if (statusLineProperty != null) {
-//            statusLine = (String) statusLineProperty;
-//        }
-//
-//        Object originalHttpReasonPhraseProperty =
-//                msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE);
-//        Object originalHttpStatusCodeProperty = msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC);
-//        if ((Objects.isNull(originalHttpStatusCodeProperty) || statusCode != ((Integer) originalHttpStatusCodeProperty))
-//                && Objects.nonNull(originalHttpReasonPhraseProperty)
-//                && originalHttpReasonPhraseProperty.equals(statusLine)) {
-//            // make the statusLine null so that the proper status code will be by the Netty server.
-//            statusLine = null;
-//        }
-//        return statusLine;
-//    }
-//
-//    public static HttpVersion determineHttpVersion(MessageContext msgContext) {
-//
-//        HttpVersion version = HttpVersion.HTTP_1_1;   //TODO: check this validity
-//        String forceHttp10 = (String) msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
-//        if (Constants.VALUE_TRUE.equals(forceHttp10)) {
-//            version = HttpVersion.HTTP_1_0;
-//        }
-//        return version;
-//    }
-//
-//    public static void setContentLengthHeader(MessageContext msgContext, String httpMethod,
-//                                              SourceResponseDelete sourceResponseDelete) throws IOException {
-//
-//        boolean forceContentLength = msgContext.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH);
-//        boolean forceContentLengthCopy =
-//                msgContext.isPropertyTrue(PassThroughConstants.COPY_CONTENT_LENGTH_FROM_INCOMING);
-//        Object originalContentLengthProperty = msgContext.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH);
-//
-//        if (forceContentLength
-//                && forceContentLengthCopy
-//                && originalContentLengthProperty != null
-//                && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_LEN)) {
-//            sourceResponseDelete.addHeader(HTTP.CONTENT_LEN, (String) originalContentLengthProperty);
-//        }
-//
-//        // When invoking http HEAD request esb set content length as 0 to response header. Since there is no message
-//        // body content length cannot be calculated inside synapse. Hence content length of the backend response is
-//        // set to sourceResponse.
-//        if (PassThroughConstants.HTTP_HEAD.equalsIgnoreCase(httpMethod)
-//                && originalContentLengthProperty != null
-//                && !DataHolder.getInstance().isPreserveHttpHeader(PassThroughConstants.ORGINAL_CONTEN_LENGTH)) {
-//            sourceResponseDelete.addHeader(PassThroughConstants.ORGINAL_CONTEN_LENGTH,
-//                    (String) originalContentLengthProperty);
-//        }
-//
-//        if (Objects.isNull(msgContext.getProperty(PassThroughConstants.HTTP_SC))
-//                || canResponseHaveContentLength(msgContext, httpMethod)) {
-//            calculateContentLengthForChunkDisabledResponse(msgContext, sourceResponseDelete);
-//        }
-//    }
-
-//    /**
-//     * Checks whether response can have Content-Length header.
-//     *
-//     * @param responseMsgContext out flow message context
-//     * @return true if response can have Content-Length header else false
-//     */
-//    private static boolean canResponseHaveContentLength(MessageContext responseMsgContext, String httpMethod) {
-//
-//        Object httpStatus = responseMsgContext.getProperty(PassThroughConstants.HTTP_SC);
-//        int status;
-//        if (httpStatus == null || httpStatus.toString().equals("")) {
-//            return false;
-//        }
-//        if (httpStatus instanceof String) {
-//            status = Integer.parseInt((String) httpStatus);
-//        } else {
-//            status = (Integer) httpStatus;
-//        }
-//        if (PassThroughConstants.HTTP_CONNECT.equals(httpMethod)) {
-//            return (status / 100 != 2);
-//        } else {
-//            return HttpStatus.SC_NO_CONTENT != status && (status / 100 != 1);
-//        }
-//    }
-//
-//    /**
-//     * Calculates the content-length when chunking is disabled.
-//     *
-//     * @param responseMsgContext outflow message context
-//     * @throws IOException
-//     */
-//    private static void calculateContentLengthForChunkDisabledResponse(
-//            MessageContext responseMsgContext, SourceResponseDelete sourceResponseDelete) throws IOException {
-//
-//        String forceHttp10 = (String) responseMsgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
-//        boolean isChunkingDisabled = responseMsgContext.isPropertyTrue(PassThroughConstants.DISABLE_CHUNKING, false);
-//
-//        if ("true".equals(forceHttp10) || isChunkingDisabled) {
-//            if (!responseMsgContext.isPropertyTrue(PassThroughConstants.MESSAGE_BUILDER_INVOKED,
-//                    false)) {
-//                try {
-//                    RelayUtils.buildMessage(responseMsgContext, false);
-//                    responseMsgContext.getEnvelope().buildWithAttachments();
-//                } catch (Exception e) {
-//                    throw new AxisFault(e.getMessage());
-//                }
-//            }
-//
-//            Boolean noEntityBody = (Boolean) responseMsgContext.getProperty(PassThroughConstants.NO_ENTITY_BODY);
-//
-//            if (noEntityBody != null && Boolean.TRUE == noEntityBody) {
-//                sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
-//                return;
-//            }
-//
-//            String contentType = sourceResponseDelete.getHeader(HTTP.CONTENT_TYPE) != null ?
-//                    sourceResponseDelete.getHeader(HTTP.CONTENT_TYPE).toString() : null;
-//            // Stream should be preserved to support disable chunking for SOAP based responses. This checks
-//            // whether chunking is disabled and response Content-Type is SOAP or FORCE_HTTP_1.0 is true.
-//            boolean preserveStream =
-//                    (isChunkingDisabled && isSOAPContentType(contentType)) || "true".equals(forceHttp10);
-//
-//            MessageFormatter formatter = MessageProcessorSelector.getMessageFormatter(responseMsgContext);
-//            OMOutputFormat format = PassThroughTransportUtils.getOMOutputFormat(responseMsgContext);
-//            ByteArrayOutputStream out = new ByteArrayOutputStream();
-//            formatter.writeTo(responseMsgContext, format, out, preserveStream);
-//            sourceResponseDelete.addHeader(HTTP.CONTENT_LEN, String.valueOf(out.toByteArray().length));
-//        }
-//    }
 
     /**
      * Set content type headers along with the charactor encoding if content type header is not preserved.
@@ -669,23 +220,10 @@ public class RequestResponseUtils {
         return outboundMsgDataStreamer;
     }
 
-//    /**
-//     * Checks whether Content-Type header related to a SOAP message.
-//     *
-//     * @param contentType Content-Type string
-//     * @return true if Content-Type is related to Soap.
-//     */
-//    private static boolean isSOAPContentType(String contentType) {
-//
-//        return contentType != null &&
-//                (contentType.indexOf(SOAP11Constants.SOAP_11_CONTENT_TYPE) != -1 ||
-//                        contentType.indexOf(SOAP12Constants.SOAP_12_CONTENT_TYPE) != -1);
-//    }
-
     /**
      * Remove unwanted headers from the http response of outgoing request. These are headers which
      * should be dictated by the transport and not the user. We remove these as these may get
-     * copied from the request messages
+     * copied from the request messages.
      *
      * @param msgContext the Axis2 Message context from which these headers should be removed
      */
@@ -700,7 +238,6 @@ public class RequestResponseUtils {
                 msgContext.setProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH,
                         transportHeaders.get(HTTP.CONTENT_LEN));
             }
-
             removeUnwantedHeadersFromHeaderMap(transportHeaders);
         }
 
@@ -794,16 +331,13 @@ public class RequestResponseUtils {
     /**
      * Check whether the content type is multipart or not.
      *
-     * @param contentType
+     * @param contentType value of the content type
      * @return true for multipart content types
      */
     public static boolean isMultipartContent(String contentType) {
 
-        if (contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
-                || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED)) {
-            return true;
-        }
-        return false;
+        return contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
+                || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED);
     }
 
     // If the HTTP method is GET or DELETE with no body, we need to write down the HEADER information to the wire
@@ -814,6 +348,13 @@ public class RequestResponseUtils {
                 || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
     }
 
+    /**
+     * Generate the REST_URL_POSTFIX from the request URI.
+     *
+     * @param uri         the Request URI as a string
+     * @param servicePath service path
+     * @return REST_URL_POSTFIX as a string
+     */
     public static String getRestUrlPostfix(String uri, String servicePath) {
 
         String contextServicePath = "/" + servicePath;
@@ -873,20 +414,21 @@ public class RequestResponseUtils {
 
     public static boolean isRESTRequest(String contentType) {
 
-        return contentType != null &&
-                (contentType.contains("application/xml") ||
-                        contentType.contains("application/x-www-form-urlencoded") ||
-                        contentType.contains("multipart/form-data") ||
-                        contentType.contains("application/json") ||
-                        contentType.contains("application/jwt"));
+        return contentType != null && (contentType.contains("application/xml")
+                || contentType.contains("application/x-www-form-urlencoded")
+                || contentType.contains("multipart/form-data")
+                || contentType.contains("application/json")
+                || contentType.contains("application/jwt")
+                || (!contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE)
+                && !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE)));
     }
 
-    public static boolean isRest(String contentType) {
-
-        return contentType != null &&
-                !contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE) &&
-                !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE);
-    }
+//    public static boolean isRest(String contentType) {
+//
+//        return contentType != null &&
+//                !contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE) &&
+//                !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE);
+//    }
 
     public static int populateSOAPVersion(MessageContext msgContext, String soapActionHeader, String contentType) {
 
@@ -895,27 +437,25 @@ public class RequestResponseUtils {
             if (contentType.contains("application/soap+xml")) {
                 soapVersion = 2;
                 TransportUtils.processContentTypeForAction(contentType, msgContext);
-            } else if (contentType.indexOf("text/xml") > -1) {
+            } else if (contentType.contains("text/xml")) {
                 soapVersion = 1;
             } else if (isRESTRequest(contentType)) {
                 soapVersion = 1;
-                msgContext.setDoingREST(true);
-            }
-
-            if (soapVersion == 1) {
-                Parameter disableREST = msgContext.getParameter("disableREST");
-                if (soapActionHeader == null && disableREST != null && "false".equals(disableREST.getValue())) {
-                    msgContext.setDoingREST(true);
-                }
             }
         }
         return soapVersion;
     }
 
-    private static boolean isRequest(MessageContext msgCtx) {
-
-        EndpointReference epr = getDestinationEPR(msgCtx);
-        return epr != null;
+    public static boolean isDoingREST(MessageContext msgContext, String contentType, int soapVersion,
+                                      String soapActionHeader) {
+        if (isRESTRequest(contentType)) {
+            return true;
+        }
+        if (soapVersion == 1) {
+            Parameter disableREST = msgContext.getParameter("disableREST");
+            return soapActionHeader == null && disableREST != null && "false".equals(disableREST.getValue());
+        }
+        return false;
     }
 
     /**
@@ -926,7 +466,7 @@ public class RequestResponseUtils {
      */
     public static EndpointReference getDestinationEPR(MessageContext msgContext) {
 
-        // Trasnport URL can be different from the WSA-To
+        // Transport URL can be different from the WSA-To
         String transportURL = (String) msgContext.getProperty(
                 Constants.Configuration.TRANSPORT_URL);
 
@@ -984,7 +524,7 @@ public class RequestResponseUtils {
             for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext();) {
                 String key = (String) iterator.next();
                 for (String excessVal : (Collection<String>) excessHeaders.get(key)) {
-                    outboundHttpCarbonMessage.setHeader(key, (String) excessVal);
+                    outboundHttpCarbonMessage.setHeader(key, excessVal);
                 }
             }
         }
@@ -997,8 +537,7 @@ public class RequestResponseUtils {
         } else {
             String disableChunking = (String) msgContext.getProperty(PassThroughConstants.DISABLE_CHUNKING);
             return !Constants.VALUE_TRUE.equals(disableChunking)
-                    && !Constants.VALUE_TRUE.equals((String)
-                    msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0));
+                    && !Constants.VALUE_TRUE.equals(msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0));
         }
     }
 

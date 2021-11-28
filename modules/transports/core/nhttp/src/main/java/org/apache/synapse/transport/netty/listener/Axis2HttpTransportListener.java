@@ -42,16 +42,15 @@ import java.util.HashMap;
 import java.util.List;
 
 /**
- * {@code Axis2HttpTransportListener} is the Axis2 Transport Listener implementation for HTTP transport.
- *
+ * {@code Axis2HttpTransportListener} is the Axis2 Transport Listener implementation for HTTP transport based on Netty.
  */
 public class Axis2HttpTransportListener implements TransportListener {
 
     private static final Logger LOG = Logger.getLogger(Axis2HttpTransportListener.class);
 
     private ServerConnector serverConnector;
-    private SourceConfiguration sourceConfiguration = null;
-    private List<MessagingHandler> messagingHandlers;
+    protected SourceConfiguration sourceConfiguration = null;
+    protected List<MessagingHandler> messagingHandlers;
 
     public Axis2HttpTransportListener() {}
 

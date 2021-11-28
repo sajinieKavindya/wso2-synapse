@@ -38,6 +38,7 @@ import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.netty.util.MessageUtils;
 import org.apache.synapse.transport.netty.util.RequestResponseUtils;
+import org.apache.synapse.transport.nhttp.util.MessageFormatterDecoratorFactory;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.caching.CachingConstants;
@@ -123,6 +124,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
             }
             try {
                 URL destinationURL = new URL(destinationEPR.getAddress());
+                LOG.info("----------------destinationEPR: " + destinationEPR.getAddress());
                 // Send request to the backend service.
                 sendForward(msgCtx, destinationURL);
             } catch (MalformedURLException e) {
@@ -182,7 +184,14 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 
         try {
             clientRequest.respond(outboundResponseCarbonMessage);
-            writeEntityBody(msgCtx, outboundResponseCarbonMessage);
+
+            Boolean noEntityBody = (Boolean) msgCtx.getProperty(PassThroughConstants.NO_ENTITY_BODY);
+            if (Boolean.TRUE == noEntityBody) {
+                writeEmptyBody(outboundResponseCarbonMessage);
+            } else {
+                MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
+                writeEntityBody(msgCtx, outboundResponseCarbonMessage, messageFormatter);
+            }
 
         } catch (Exception e) {
             LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error occurred while submitting the response " +
@@ -209,7 +218,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 //                    (String) msgCtx.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH)));
 //        }
 
-        HttpOutboundRequest httpOutboundRequest = new HttpOutboundRequest(msgCtx, url);
+        HttpOutboundRequest httpOutboundRequest = new HttpOutboundRequest(msgCtx, url, targetConfiguration);
         HttpCarbonMessage outboundCarbonRequest = httpOutboundRequest.getOutboundCarbonRequest();
 
         SenderConfiguration senderConfiguration = createSenderConfiguration(httpOutboundRequest);
@@ -223,7 +232,9 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         if (RequestResponseUtils.ignoreMessageBody(msgCtx)) {
             writeEmptyBody(outboundCarbonRequest);
         } else {
-            writeEntityBody(msgCtx, outboundCarbonRequest);
+            MessageFormatter messageFormatter =
+                    MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
+            writeEntityBody(msgCtx, outboundCarbonRequest, messageFormatter);
         }
 
     }
@@ -258,14 +269,18 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         }
     }
 
-    private void writeEntityBody(MessageContext msgContext, HttpCarbonMessage outboundCarbonMessage) throws AxisFault {
-        if (Boolean.TRUE.equals(msgContext.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))) {
+    private void writeEntityBody(MessageContext msgContext, HttpCarbonMessage outboundCarbonMessage,
+                                 MessageFormatter messageFormatter) {
+        HttpCarbonMessage inboundCarbonMessage =
+                (HttpCarbonMessage) msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
+        if (Boolean.TRUE.equals(msgContext.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED))
+                || inboundCarbonMessage == null) {
             final HttpMessageDataStreamer outboundMsgDataStreamer =
                     RequestResponseUtils.getHttpMessageDataStreamer(outboundCarbonMessage);
             final OutputStream outputStream = outboundMsgDataStreamer.getOutputStream();
             OMOutputFormat format = MessageUtils.getOMOutputFormat(msgContext);
             try {
-                MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgContext);
+
                 messageFormatter.writeTo(msgContext, format, outputStream, false);
             } catch (AxisFault axisFault) {
                 LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
@@ -277,16 +292,16 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 }
             }
         } else {
-            HttpCarbonMessage inboundCarbonMessage =
-                    (HttpCarbonMessage) msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
+
             // the inbound carbon message is null when the call is initiated from non-http transport.
             // In these cases, either payload can be empty or available in the envelope in the message context.
             // If the message context has an empty envelope and if the inbound carbon message is null, we need to
             // write an empty body to the backend.
-            if (inboundCarbonMessage == null) {
-                writeEmptyBody(outboundCarbonMessage);
-                return;
-            }
+
+//            if (inboundCarbonMessage == null) {
+//                writeEmptyBody(outboundCarbonMessage);
+//                return;
+//            }
             do {
                 HttpContent httpContent = inboundCarbonMessage.getHttpContent();
                 outboundCarbonMessage.addHttpContent(httpContent);
