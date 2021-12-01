@@ -28,6 +28,8 @@ import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.json.JSONObject;
 
+import java.util.Objects;
+
 /**
  * This class represents an endpoint with the EPR as the 'To' header of the message. It is
  * responsible for sending the message to this EPR, performing retries etc on failure and
@@ -86,12 +88,14 @@ public class DefaultEndpoint extends AbstractEndpoint {
 
     	org.apache.axis2.context.MessageContext messageContext =((Axis2MessageContext) synCtx).getAxis2MessageContext();
     	final Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
-        if (pipe != null && !Boolean.TRUE.equals(messageContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED)) && messageContext.getProperty("To") == null) {
-        	 try {
+        if ((pipe != null || Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE")))
+                && !Boolean.TRUE.equals(messageContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED))
+                && messageContext.getProperty("To") == null) {
+            try {
 	            RelayUtils.buildMessage(((Axis2MessageContext) synCtx).getAxis2MessageContext(),false);
             } catch (Exception e) {
                  handleException("Error while building message", e, synCtx);
-             }
+            }
         }
         if (getParentEndpoint() == null && !readyToSend()) {
             // if the this leaf endpoint is too a root endpoint and is in inactive

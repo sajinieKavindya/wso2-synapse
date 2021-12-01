@@ -50,12 +50,16 @@ public class SourceResponseFactory {
 
         if (msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC) != null &&
                 statusCode == ((Integer) msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC))) {
+            // Esb has not changed the status code or not used a property to change the status code.
             sourceResponse = new SourceResponse(sourceConfiguration, statusCode, statusLine, sourceRequest);
         } else {
+            // ESB has changed the status code or used a property to change the status code.
             if (msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE) != null &&
                     (statusLine.equals(msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE)))) {
+                // has not changed the status code. hence generate a proper one.
                 sourceResponse = new SourceResponse(sourceConfiguration, statusCode, sourceRequest);
             } else {
+                // has changed the status code. so use that one.
                 sourceResponse = new SourceResponse(sourceConfiguration, statusCode, statusLine, sourceRequest);
             }
         }
@@ -98,7 +102,7 @@ public class SourceResponseFactory {
         if (transportHeaders != null) {
             addResponseHeader(sourceResponse, transportHeaders);
         }else{
-        	  Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
+             Boolean noEntityBody = (Boolean) msgContext.getProperty(NhttpConstants.NO_ENTITY_BODY);
         	 if (noEntityBody == null || Boolean.FALSE == noEntityBody) {
         		 OMOutputFormat format = NhttpUtil.getOMOutputFormat(msgContext);
         		 transportHeaders = new HashMap();

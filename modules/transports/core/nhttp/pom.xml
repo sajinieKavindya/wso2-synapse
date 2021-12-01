@@ -46,6 +46,7 @@
                             org.apache.synapse.transport.http.*,
                             org.apache.synapse.transport.nhttp.*,
 			                org.apache.synapse.transport.passthru.*,
+			                org.apache.synapse.transport.netty.*,
 			                org.apache.synapse.transport.certificatevalidation.*,
                             org.apache.synapse.transport.dynamicconfigurations.*,
                             org.apache.synapse.transport.customlogsetter.*,
@@ -243,6 +244,11 @@
             <artifactId>log4j</artifactId>
             <scope>test</scope>
             <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.wso2.transport.http</groupId>
+            <artifactId>org.wso2.transport.http.netty</artifactId>
+            <version>6.3.25</version>
         </dependency>
     </dependencies>
 

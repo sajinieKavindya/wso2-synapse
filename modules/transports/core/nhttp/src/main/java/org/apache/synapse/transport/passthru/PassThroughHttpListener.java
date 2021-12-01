@@ -162,6 +162,7 @@ public class PassThroughHttpListener implements TransportListener {
         operatingPort = port + portOffset;
         portParam.setValue(String.valueOf(operatingPort));
         portParam.getParameterElement().setText(String.valueOf(operatingPort));
+        log.info("--------------------------port-----------------------"+ operatingPort);
 
         System.setProperty(transportInDescription.getName() + ".nio.port", String.valueOf(operatingPort));
 

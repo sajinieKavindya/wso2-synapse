@@ -259,6 +259,7 @@ public class PassThroughHttpSender extends AbstractHandler implements TransportS
         EndpointReference epr = PassThroughTransportUtils.getDestinationEPR(msgContext);
         if (epr != null) {
             if (!epr.hasNoneAddress()) {
+                log.info("----------------destinationEPR: " + epr.getAddress());
                 if (msgContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE) == null) {
                     Pipe pipe = new Pipe(targetConfiguration.getBufferFactory().getBuffer(),
                             "Test", targetConfiguration);

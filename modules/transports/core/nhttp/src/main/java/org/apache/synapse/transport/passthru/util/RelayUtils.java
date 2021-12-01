@@ -36,12 +36,15 @@ import org.apache.commons.io.IOUtils;
 import org.apache.commons.io.output.NullOutputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.synapse.transport.netty.util.MessageUtils;
+import org.apache.http.HttpEntityEnclosingRequest;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.ServerWorker;
 import org.apache.synapse.transport.passthru.TargetRequest;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
+import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
@@ -52,6 +55,8 @@ import java.nio.ByteBuffer;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamException;
 
 public class RelayUtils {
@@ -92,35 +97,36 @@ public class RelayUtils {
     public static void buildMessage(MessageContext messageContext, boolean earlyBuild)
             throws IOException, XMLStreamException {
 
-        final Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
-
         if (messageContext.getProperty(Constants.Configuration.CONTENT_TYPE) != null) {
             if (log.isDebugEnabled()) {
                 log.debug("Content Type is " + messageContext.getProperty(Constants.Configuration.CONTENT_TYPE));
             }
 
-            if (pipe != null
-                && !Boolean.TRUE.equals(messageContext
-                                                .getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED)) && forcePTBuild) {
-                InputStream in = pipe.getInputStream();
+            if (!Boolean.TRUE.equals(messageContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED))
+                    && forcePTBuild) {
+                final Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
+                if (pipe != null) {
+                    InputStream in = pipe.getInputStream();
 
-                Object http_sc = messageContext.getProperty(NhttpConstants.HTTP_SC);
-                if (http_sc != null && http_sc instanceof Integer && http_sc.equals(202)) {
-                    if (in != null) {
-                        InputStream bis = new ReadOnlyBIS(in);
-                        int c = bis.read();
-                        if (c == -1) {
-                            messageContext.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED, Boolean.TRUE);
-                            messageContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
-                            return;
+                    Object http_sc = messageContext.getProperty(NhttpConstants.HTTP_SC);
+                    if (http_sc != null && http_sc instanceof Integer && http_sc.equals(202)) {
+                        if (in != null) {
+                            InputStream bis = new ReadOnlyBIS(in);
+                            int c = bis.read();
+                            if (c == -1) {
+                                messageContext.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED, Boolean.TRUE);
+                                messageContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
+                                return;
+                            }
+                            bis.reset();
+                            in = bis;
                         }
-                        bis.reset();
-                        in = bis;
                     }
-                }
 
-                buildMessage(messageContext, earlyBuild, in);
-                return;
+                    buildMessage(messageContext, earlyBuild, in);
+                } else if (Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE")) && forcePTBuild) {
+                    MessageUtils.buildMessage(messageContext, earlyBuild);
+                }
             }
         } else {
             if (log.isDebugEnabled()) {
@@ -128,7 +134,6 @@ public class RelayUtils {
             }
             messageContext.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED,
                     Boolean.TRUE);
-            return;
         }
     }
 

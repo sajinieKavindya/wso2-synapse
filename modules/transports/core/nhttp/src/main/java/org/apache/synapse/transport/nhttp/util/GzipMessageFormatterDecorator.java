@@ -53,7 +53,8 @@ public class GzipMessageFormatterDecorator implements MessageFormatter {
         return messageFormatter.getBytes(messageContext, format);
     }
 
-    public void writeTo(MessageContext messageContext, OMOutputFormat format, OutputStream outputStream, boolean preserve) throws AxisFault {
+    public void writeTo(MessageContext messageContext, OMOutputFormat format, OutputStream outputStream,
+                        boolean preserve) throws AxisFault {
 
         try {
 

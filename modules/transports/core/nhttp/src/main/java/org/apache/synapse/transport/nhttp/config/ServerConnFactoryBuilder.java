@@ -53,6 +53,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
@@ -285,11 +286,13 @@ public class ServerConnFactoryBuilder {
         final Parameter sslpParameter = transportIn.getParameter("SSLProtocol");
         Parameter preferredCiphersParam = transportIn.getParameter(NhttpConstants.PREFERRED_CIPHERS);
         final String sslProtocol = sslpParameter != null ? sslpParameter.getValue().toString() : "TLS";
+
         OMElement keyStoreEl = keyParam != null ? keyParam.getParameterElement().getFirstElement() : null;
         OMElement trustStoreEl = trustParam != null ? trustParam.getParameterElement().getFirstElement() : null;
         OMElement clientAuthEl = clientAuthParam != null ? clientAuthParam.getParameterElement() : null;
         OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
-        OMElement preferredCiphersEl = preferredCiphersParam != null ? preferredCiphersParam.getParameterElement() : null;
+        OMElement preferredCiphersEl = preferredCiphersParam != null
+                ? preferredCiphersParam.getParameterElement() : null;
 
         final Parameter cvp = transportIn.getParameter("CertificateRevocationVerifier");
         final String cvEnable = cvp != null ?
