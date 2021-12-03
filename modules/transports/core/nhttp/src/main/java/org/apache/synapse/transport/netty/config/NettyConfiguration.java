@@ -45,11 +45,9 @@ public class NettyConfiguration {
      * Default tuning parameter values.
      */
     private static final int DEFAULT_WORKER_POOL_SIZE_CORE = 400;
-    private static final int DEFAULT_WORKER_POOL_SIZE_MAX = 500;
+    private static final int DEFAULT_WORKER_POOL_SIZE_MAX = 400;
     private static final int DEFAULT_WORKER_THREAD_KEEPALIVE_SEC = 60;
     private static final int DEFAULT_WORKER_POOL_QUEUE_LENGTH = -1;
-    private static final int DEFAULT_IO_BUFFER_SIZE = 8 * 1024;
-
 
     //additional rest dispatch handlers
     private static final String REST_DISPATCHER_SERVICE = "rest.dispatcher.service";
@@ -57,12 +55,41 @@ public class NettyConfiguration {
     private static final String REST_URI_API_REGEX = "rest_uri_api_regex";
     private static final String REST_URI_PROXY_REGEX = "rest_uri_proxy_regex";
     // properties which are allowed to be directly pass through from request context to response context explicitly
+    // TODO: verify https://github.com/wso2/wso2-synapse/pull/1729
     private static final String ALLOWED_RESPONSE_PROPERTIES = "allowed_response_properties";
     private static final String REQUEST_LIMIT_VALIDATION = "http.requestLimits.validation.enabled";
     private static final String MAX_STATUS_LINE_LENGTH = "http.requestLimits.maxStatusLineLength";
     private static final String MAX_HEADER_SIZE = "http.requestLimits.maxHeaderSize";
     private static final String MAX_ENTITY_BODY_SIZE = "http.requestLimits.maxEntityBodySize";
+    private static final String CLIENT_REQUEST_LIMIT_VALIDATION = "http.client.requestLimits.validation.enabled";
+    private static final String MAX_CLIENT_REQUEST_STATUS_LINE_LENGTH = "http.client.requestLimits.maxStatusLineLength";
+    private static final String MAX_CLIENT_REQUEST_HEADER_SIZE = "http.client.requestLimits.maxHeaderSize";
+    private static final String MAX_CLIENT_REQUEST_ENTITY_BODY_SIZE = "http.client.requestLimits.maxEntityBodySize";
+
     private static final String HTTP_SOCKET_TIMEOUT = "http.socket.timeout";
+
+    //Client connection pooling configs
+    public static final String ENABLE_CUSTOM_CONNECTION_POOL_CONFIG = "custom.connection.pool.config.enabled";
+    /**
+     * Max active connections per route(host:port). Default value is -1 which indicates unlimited.
+     */
+    public static final String CONNECTION_POOLING_MAX_ACTIVE_CONNECTIONS = "connection.pool.maxActiveConnections";
+    /**
+     * Maximum number of idle connections allowed per pool.
+     */
+    public static final String CONNECTION_POOLING_MAX_IDLE_CONNECTIONS = "connection.pool.maxIdleConnections";
+
+    /**
+     * Maximum amount of time, the client should wait for an idle connection before it sends an error
+     * when the pool is exhausted.
+     */
+    public static final String CONNECTION_POOLING_WAIT_TIME = "connection.pool.waitTimeInMillis";
+    /**
+     * Maximum active streams per connection. This only applies to HTTP/2.
+     */
+    public static final String CONNECTION_POOLING_MAX_ACTIVE_STREAMS_PER_CONNECTION =
+            "connection.pool.maxActiveStreamsPerConnection";
+    public static final String CLIENT_ENDPOINT_SOCKET_TIMEOUT = "http.client.endpoint.socket.timeout";
 
     private Boolean isKeepAliveDisabled = null;
     private Boolean reverseProxyMode = null;
@@ -118,11 +145,6 @@ public class NettyConfiguration {
                 DEFAULT_WORKER_POOL_QUEUE_LENGTH, props);
     }
 
-    public int getIOBufferSize() {
-        return ConfigurationBuilderUtil.getIntProperty(PassThroughConfigPNames.IO_BUFFER_SIZE,
-                DEFAULT_IO_BUFFER_SIZE, props);
-    }
-
     public String getRestUriApiRegex() {
         return ConfigurationBuilderUtil.getStringProperty(REST_URI_API_REGEX, "", props);
     }
@@ -140,19 +162,60 @@ public class NettyConfiguration {
     }
 
     public int getMaxStatusLineLength() {
-        return ConfigurationBuilderUtil.getIntProperty(MAX_STATUS_LINE_LENGTH, 4096, props);
+        return ConfigurationBuilderUtil.getIntProperty(MAX_STATUS_LINE_LENGTH, -1, props);
     }
 
     public int getMaxHeaderSize() {
-        return ConfigurationBuilderUtil.getIntProperty(MAX_HEADER_SIZE, 8192, props);
+        return ConfigurationBuilderUtil.getIntProperty(MAX_HEADER_SIZE, -1, props);
     }
 
     public int getMaxEntityBodySize() {
         return ConfigurationBuilderUtil.getIntProperty(MAX_ENTITY_BODY_SIZE, -1, props);
     }
 
+    public boolean isClientRequestLimitsValidationEnabled() {
+        return ConfigurationBuilderUtil.getBooleanProperty(CLIENT_REQUEST_LIMIT_VALIDATION, false, props);
+    }
+
+    public int getClientRequestMaxStatusLineLength() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_CLIENT_REQUEST_STATUS_LINE_LENGTH, -1, props);
+    }
+
+    public int getClientRequestMaxHeaderSize() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_CLIENT_REQUEST_HEADER_SIZE, -1, props);
+    }
+
+    public int getClientRequestMaxEntityBodySize() {
+        return ConfigurationBuilderUtil.getIntProperty(MAX_CLIENT_REQUEST_ENTITY_BODY_SIZE, -1, props);
+    }
+
     public int getSocketTimeout() {
         return ConfigurationBuilderUtil.getIntProperty(HTTP_SOCKET_TIMEOUT, 180000, props);
+    }
+
+    public boolean isCustomConnectionPoolConfigsEnabled() {
+        return ConfigurationBuilderUtil.getBooleanProperty(ENABLE_CUSTOM_CONNECTION_POOL_CONFIG, false, props);
+    }
+
+    public int getConnectionPoolingMaxActiveConnections() {
+        return ConfigurationBuilderUtil.getIntProperty(CONNECTION_POOLING_MAX_ACTIVE_CONNECTIONS, -1, props);
+    }
+
+    public int getConnectionPoolingMaxIdleConnections() {
+        return ConfigurationBuilderUtil.getIntProperty(CONNECTION_POOLING_MAX_IDLE_CONNECTIONS, 100, props);
+    }
+
+    public int getConnectionPoolingWaitTime() {
+        return ConfigurationBuilderUtil.getIntProperty(CONNECTION_POOLING_WAIT_TIME, 30, props);
+    }
+
+    public int getConnectionPoolingMaxActiveStreamsPerConnection() {
+        return ConfigurationBuilderUtil.getIntProperty(CONNECTION_POOLING_MAX_ACTIVE_STREAMS_PER_CONNECTION,
+                50, props);
+    }
+
+    public int getClientEndpointSocketTimeout() {
+        return ConfigurationBuilderUtil.getIntProperty(CLIENT_ENDPOINT_SOCKET_TIMEOUT, 60, props);
     }
 
     public boolean isKeepAliveDisabled() {
@@ -193,6 +256,11 @@ public class NettyConfiguration {
     public String isServiceListBlocked() {
         return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.HTTP_BLOCK_SERVICE_LIST,
                 "false", props);
+    }
+
+    public String getResponsePreserveHttpHeaders() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.HTTP_RESPONSE_HEADERS_PRESERVE,
+                "", props);
     }
 
     /**

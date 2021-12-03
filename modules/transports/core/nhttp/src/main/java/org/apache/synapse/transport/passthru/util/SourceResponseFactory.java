@@ -50,13 +50,13 @@ public class SourceResponseFactory {
 
         if (msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC) != null &&
                 statusCode == ((Integer) msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_SC))) {
-            // Esb has not changed the status code or not used a property to change the status code.
+            // Esb has not changed the status code or client has not used a property to change the status code.
             sourceResponse = new SourceResponse(sourceConfiguration, statusCode, statusLine, sourceRequest);
         } else {
-            // ESB has changed the status code or used a property to change the status code.
+            // ESB has changed the status code or client has used a property to change the status code.
             if (msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE) != null &&
                     (statusLine.equals(msgContext.getProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE)))) {
-                // has not changed the status code. hence generate a proper one.
+                // has not changed the reason phrase. hence generate a proper one.
                 sourceResponse = new SourceResponse(sourceConfiguration, statusCode, sourceRequest);
             } else {
                 // has changed the status code. so use that one.

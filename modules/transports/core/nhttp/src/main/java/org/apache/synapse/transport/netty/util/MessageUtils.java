@@ -112,6 +112,7 @@ public class MessageUtils {
 
         HttpMessageDataStreamer httpMessageDataStreamer = new HttpMessageDataStreamer(httpCarbonMessage);
 
+        // TODO: can use NO_ENTITY_BODY property
         long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
         String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
         try {

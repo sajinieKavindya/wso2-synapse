@@ -83,14 +83,6 @@ public class HttpRequestWorker implements Runnable {
 
         processHttpRequestUri();
 
-        boolean continueFlow = invokeHandlers();
-        if (!continueFlow) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Discard the message flow as there was an error return from a MessagingHandler");
-            }
-            return;
-        }
-
         // check if the request is to fetch wsdl. If so, return the message flow without going through the normal flow
         if (isRequestToFetchWSDL()) {
             return;
@@ -145,6 +137,7 @@ public class HttpRequestWorker implements Runnable {
             contentLength = lengthStr != null ? Long.parseLong(lengthStr) : contentLength;
             if (contentLength == BridgeConstants.NO_CONTENT_LENGTH_FOUND) {
                 //Read one byte to make sure the incoming stream has data
+                // TODO: analyze
                 contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
             }
         } catch (NumberFormatException e) {
@@ -223,28 +216,6 @@ public class HttpRequestWorker implements Runnable {
                 }
                 messageType = HTTPConstants.MEDIA_TYPE_APPLICATION_XML;
             }
-
-//            if (HTTPConstants.HEADER_GET.equals(httpMethod) || HTTPConstants.HEADER_DELETE.equals(httpMethod)) {
-//                // if this is a GET or DELETE request with no Content-Type header, then set
-//                // application/x-www-form-urlencoded as the default content type.
-//                contentType = HTTPConstants.MEDIA_TYPE_X_WWW_FORM;
-//                // if the Content-Type headers is application/x-www-form-urlencoded, then setting the message type as
-//                // application/xml.
-//                messageType = "application/xml";
-//            } else {
-//                Parameter param = sourceConfiguration.getConfigurationContext().getAxisConfiguration().
-//                        getParameter(PassThroughConstants.REQUEST_CONTENT_TYPE);
-//                if (param != null) {
-//                    contentType = param.getValue().toString();
-//                    messageType = contentType;
-//                } else {
-//                    // According to the RFC 7231 section 3.1.5.5, if the request containing a payload body does not
-//                    // have a Content-Type header field, then the recipient may assume a media type
-//                    // of "application/octet-stream"
-//                    contentType = PassThroughConstants.APPLICATION_OCTET_STREAM;
-//                    messageType = "application/xml";
-//                }
-//            }
         }
         msgContext.setProperty(Constants.Configuration.CONTENT_TYPE, contentType);
         msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, messageType);
@@ -276,6 +247,7 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setEnvelope(envelope);
 
         if (RequestResponseUtils.isDoingREST(msgContext, contentType, soapVersion, soapAction)) {
+            msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
             msgContext.setDoingREST(true);
         }
     }
@@ -306,6 +278,8 @@ public class HttpRequestWorker implements Runnable {
                         .getStatus();
         boolean ack = RequestResponseTransport.RequestResponseTransportStatus.ACKED.equals(transportStatus);
         boolean forced = msgContext.isPropertyTrue(BridgeConstants.FORCE_SC_ACCEPTED);
+
+        // TODO: check this further
         boolean nioAck = msgContext.isPropertyTrue(BridgeConstants.NIO_ACK_REQUESTED, false);
 
         if (respWillFollow || ack || forced || nioAck) {
@@ -315,7 +289,6 @@ public class HttpRequestWorker implements Runnable {
             HttpCarbonMessage outboundResponse;
 
             if (!nioAck) {
-                msgContext.removeProperty(MessageContext.TRANSPORT_HEADERS);
                 outboundResponse = new HttpCarbonMessage(
                         new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.ACCEPTED));
                 outboundResponse.setHttpStatusCode(HttpStatus.SC_ACCEPTED);
@@ -366,7 +339,6 @@ public class HttpRequestWorker implements Runnable {
 
             HttpCarbonMessage outboundResponse = new HttpCarbonMessage(
                     new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.INTERNAL_SERVER_ERROR));
-            //TODO: check what are the required request headers to be sent here
             outboundResponse.setHeader(HTTP.CONTENT_TYPE, "text/html");
             outboundResponse.setHttpStatusCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
 
@@ -376,19 +348,22 @@ public class HttpRequestWorker implements Runnable {
             }
             try {
                 clientRequest.respond(outboundResponse);
+
+                // TODO: do not send the ex.getMessage(
+                String body = "<html><body><h1>Failed to process the request</h1>"
+                        + "<p>" + msg + "</p></body></html>";
+
+                try (OutputStream outputStream =
+                             RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
+                    outputStream.write(body.getBytes());
+                } catch (IOException ioException) {
+                    LOGGER.error("Error occurred while writing the response body to the client", ioException);
+                }
             } catch (ServerConnectorException serverConnectorException) {
                 LOGGER.error("Error occurred while submitting the response to the client");
             }
 
-            String body = "<html><body><h1>Failed to process the request</h1>"
-                    + "<p>" + msg + "</p><p>" + ex.getMessage() + "</p></body></html>";
 
-            try (OutputStream outputStream =
-                         RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
-                outputStream.write(body.getBytes());
-            } catch (IOException ioException) {
-                LOGGER.error("Error occurred while writing the response body to the client", ioException);
-            }
         }
     }
 

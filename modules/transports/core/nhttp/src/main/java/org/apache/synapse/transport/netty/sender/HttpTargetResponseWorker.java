@@ -51,16 +51,16 @@ import java.util.TreeMap;
 /**
  * {@code HttpResponseWorker} is the Thread which does the response processing.
  */
-public class HttpInboundResponseWorker implements Runnable {
+public class HttpTargetResponseWorker implements Runnable {
 
-    private static final Logger LOG = Logger.getLogger(HttpInboundResponseWorker.class);
+    private static final Logger LOG = Logger.getLogger(HttpTargetResponseWorker.class);
 
     private HttpCarbonMessage httpResponse;
     private final MessageContext requestMsgCtx;
     private final TargetConfiguration targetConfiguration;
 
-    HttpInboundResponseWorker(MessageContext requestMsgCtx, HttpCarbonMessage httpResponse,
-                              TargetConfiguration targetConfiguration) {
+    HttpTargetResponseWorker(MessageContext requestMsgCtx, HttpCarbonMessage httpResponse,
+                             TargetConfiguration targetConfiguration) {
         this.httpResponse = httpResponse;
         this.requestMsgCtx = requestMsgCtx;
         this.targetConfiguration = targetConfiguration;
@@ -155,9 +155,9 @@ public class HttpInboundResponseWorker implements Runnable {
         responseMsgCtx.setTransportIn(requestMsgCtx.getTransportIn());
         responseMsgCtx.setTransportOut(requestMsgCtx.getTransportOut());
 
-        responseMsgCtx.setProperty(PassThroughConstants.INVOKED_REST, requestMsgCtx.isDoingREST());
-        responseMsgCtx.setProperty(PassThroughConstants.ORIGINAL_HTTP_SC, statusCode);
-        responseMsgCtx.setProperty(PassThroughConstants.ORIGINAL_HTTP_REASON_PHRASE, httpResponse.getReasonPhrase());
+        responseMsgCtx.setProperty(BridgeConstants.INVOKED_REST, requestMsgCtx.isDoingREST());
+        responseMsgCtx.setProperty(BridgeConstants.HTTP_STATUS_CODE_SENT_FROM_BACKEND, statusCode);
+        responseMsgCtx.setProperty(BridgeConstants.HTTP_REASON_PHRASE_SENT_FROM_BACKEND, httpResponse.getReasonPhrase());
 
         responseMsgCtx.setAxisMessage(requestMsgCtx.getOperationContext().getAxisOperation().
                 getMessage(WSDLConstants.MESSAGE_LABEL_IN_VALUE));
@@ -174,7 +174,7 @@ public class HttpInboundResponseWorker implements Runnable {
             responseMsgCtx.setProperty(AddressingConstants.
                     DISABLE_ADDRESSING_FOR_OUT_MESSAGES, Boolean.TRUE);
             responseMsgCtx.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED, Boolean.FALSE);
-            responseMsgCtx.setProperty(NhttpConstants.SC_ACCEPTED, Boolean.TRUE);
+            responseMsgCtx.setProperty(BridgeConstants.SC_ACCEPTED, Boolean.TRUE);
         }
 
         // TODO: set correlation_id
@@ -215,7 +215,7 @@ public class HttpInboundResponseWorker implements Runnable {
 
             // Set status code
             responseMsgCtx.setProperty(PassThroughConstants.HTTP_SC, statusCode);
-            responseMsgCtx.setProperty(PassThroughConstants.HTTP_SC_DESC, httpResponse.getReasonPhrase());
+            responseMsgCtx.setProperty(BridgeConstants.HTTP_SC_DESC, httpResponse.getReasonPhrase());
             if (statusCode >= 400) {
                 responseMsgCtx.setProperty(PassThroughConstants.FAULT_MESSAGE,
                         PassThroughConstants.TRUE);
@@ -228,6 +228,8 @@ public class HttpInboundResponseWorker implements Runnable {
             responseMsgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, httpResponse);
             responseMsgCtx.setProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE,
                     requestMsgCtx.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE));
+            responseMsgCtx.setProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION,
+                    requestMsgCtx.getProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION));
 
             // Handover message to the axis engine for processing
             try {
@@ -334,7 +336,7 @@ public class HttpInboundResponseWorker implements Runnable {
     }
 
     private boolean handle202(MessageContext requestMsgContext, MessageContext responseMsgContext) throws AxisFault {
-        if (requestMsgContext.isPropertyTrue(NhttpConstants.IGNORE_SC_ACCEPTED)) {
+        if (requestMsgContext.isPropertyTrue(BridgeConstants.IGNORE_SC_ACCEPTED)) {
             // We should not further process this 202 response - Ignore it
             return true;
         }

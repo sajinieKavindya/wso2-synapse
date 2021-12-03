@@ -77,7 +77,7 @@ public class Axis2HttpTransportListener implements TransportListener {
     public void start() {
         ServerConnectorFuture serverConnectorFuture = serverConnector.start();
         serverConnectorFuture.setHttpConnectorListener(
-                new PassThroughHttpConnectorListener(sourceConfiguration));
+                new Axis2HttpConnectorListener(sourceConfiguration));
         serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
         try {
             serverConnectorFuture.sync();

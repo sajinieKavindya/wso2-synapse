@@ -31,27 +31,27 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 /**
  * {@code ResponseListener} listens for the response expected for the sent request.
  */
-public class PassThroughHttpInboundRespListener implements HttpConnectorListener {
+public class Axis2HttpInboundRespListener implements HttpConnectorListener {
 
-    private static final Logger LOG = Logger.getLogger(PassThroughHttpInboundRespListener.class);
+    private static final Logger LOG = Logger.getLogger(Axis2HttpInboundRespListener.class);
 
     private final MessageContext requestMsgCtx;
     private final WorkerPool workerPool;
     private final TargetConfiguration targetConfiguration;
-    private final HttpInboundResponseErrorHandler errorHandler;
+    private final TargetErrorHandler errorHandler;
 
-    PassThroughHttpInboundRespListener(WorkerPool workerPool, MessageContext requestMsgContext,
-                                       TargetConfiguration targetConfiguration) {
+    public Axis2HttpInboundRespListener(WorkerPool workerPool, MessageContext requestMsgContext,
+                                        TargetConfiguration targetConfiguration) {
         this.workerPool = workerPool;
         this.requestMsgCtx = requestMsgContext;
         this.targetConfiguration = targetConfiguration;
-        this.errorHandler = new HttpInboundResponseErrorHandler(targetConfiguration);
+        this.errorHandler = new TargetErrorHandler(targetConfiguration);
     }
 
     @Override
     public void onMessage(HttpCarbonMessage httpResponse) {
         LOG.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Response received");
-        workerPool.execute(new HttpInboundResponseWorker(requestMsgCtx, httpResponse, targetConfiguration));
+        workerPool.execute(new HttpTargetResponseWorker(requestMsgCtx, httpResponse, targetConfiguration));
     }
 
     @Override

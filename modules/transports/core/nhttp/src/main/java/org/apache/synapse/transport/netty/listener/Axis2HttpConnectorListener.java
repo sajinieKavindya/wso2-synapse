@@ -29,13 +29,13 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
  * hands it over to the {@code HttpRequestWorker} to convert it to {@code MessageContext} and finally deliver it
  * to the axis engine.
  */
-public class PassThroughHttpConnectorListener implements HttpConnectorListener {
+public class Axis2HttpConnectorListener implements HttpConnectorListener {
 
-    private static final Logger LOGGER = Logger.getLogger(PassThroughHttpConnectorListener.class);
+    private static final Logger LOGGER = Logger.getLogger(Axis2HttpConnectorListener.class);
 
     private final SourceConfiguration sourceConfiguration;
 
-    public PassThroughHttpConnectorListener(SourceConfiguration sourceConfiguration) {
+    public Axis2HttpConnectorListener(SourceConfiguration sourceConfiguration) {
 
         this.sourceConfiguration = sourceConfiguration;
     }

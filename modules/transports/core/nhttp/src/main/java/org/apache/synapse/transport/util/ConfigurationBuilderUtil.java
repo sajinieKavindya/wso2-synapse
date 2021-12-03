@@ -80,6 +80,30 @@ public class ConfigurationBuilderUtil {
         return getIntProperty(name, null, props);
     }
 
+    public static Long getLongProperty(String name, Long def, Properties props) {
+        String val = System.getProperty(name);
+        if (val == null) {
+            val = props.getProperty(name);
+        }
+
+        if (val != null) {
+            long longVal;
+            try {
+                longVal = Long.valueOf(val);
+            } catch (NumberFormatException e) {
+                LOGGER.warn("Invalid pass-through http tuning property value. " + name +
+                        " must be an integer");
+                return def;
+            }
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Using pass-through http tuning parameter : " + name + " = " + val);
+            }
+            return longVal;
+        }
+
+        return def;
+    }
+
     /**
      * Get a boolean property that tunes pass-through http transport. Prefer system properties
      *

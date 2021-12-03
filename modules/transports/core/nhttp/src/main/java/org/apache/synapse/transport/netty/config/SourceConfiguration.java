@@ -102,6 +102,7 @@ public class SourceConfiguration extends BaseConfiguration {
             handleException("Cannot create HttpGetRequestProcessor");
         }
 
+        populatePreserveHTTPHeaders(conf.getResponsePreserveHttpHeaders());
     }
 
     private HttpGetRequestProcessor createHttpGetProcessor(String clss) throws AxisFault {

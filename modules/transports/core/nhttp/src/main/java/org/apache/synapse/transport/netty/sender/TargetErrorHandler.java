@@ -34,13 +34,13 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
 
-public class HttpInboundResponseErrorHandler {
+public class TargetErrorHandler {
 
-    private static final Logger LOG = Logger.getLogger(HttpInboundResponseErrorHandler.class);
+    private static final Logger LOG = Logger.getLogger(TargetErrorHandler.class);
 
     private TargetConfiguration targetConfiguration;
 
-    public HttpInboundResponseErrorHandler(TargetConfiguration targetConfiguration) {
+    public TargetErrorHandler(TargetConfiguration targetConfiguration) {
 
         this.targetConfiguration = targetConfiguration;
     }

@@ -22,23 +22,24 @@ package org.apache.synapse.transport.netty;
  * {@code BridgeConstants} contains the constants related to netty axis2 bridge.
  */
 public class BridgeConstants {
+
     public static final String BRIDGE_LOG_PREFIX = "[Bridge] ";
 
+    public static final String VALUE_TRUE = "true";
+    public static final String VALUE_FALSE = "false";
+
     public static final String NO_ENTITY_BODY = "NO_ENTITY_BODY";
+    public static final String PROTOCOL = "PROTOCOL";
 
     public static final String REMOTE_HOST = "REMOTE_HOST";
 
     public static final String HTTP_METHOD = "HTTP_METHOD";
-    public static final String HTTP_STATUS_CODE = "HTTP_STATUS_CODE";
-    public static final String HTTP_REASON_PHRASE = "HTTP_REASON_PHRASE";
     public static final String CONTENT_TYPE_HEADER = "Content-Type";
     public static final String SOAP_ACTION_HEADER = "SOAPAction";
     public static final String TRANSFER_ENCODING = "Transfer-Encoding";
 
     public static final String CONTENT_LEN = "Content-Length";
 
-    public static final String HTTP_STATUS_CODE_PROP = "HTTP_SC";
-    public static final String HTTP_STATUS_CODE_DESCRIPTION_PROP = "HTTP_SC_DESC";
 
     public static final String REST_URL_POSTFIX = "REST_URL_POSTFIX";
     public static final String SERVICE_PREFIX = "SERVICE_PREFIX";
@@ -52,21 +53,23 @@ public class BridgeConstants {
     public static final long NO_CONTENT_LENGTH_FOUND = -1;
     public static final short ONE_BYTE = 1;
 
+    // This is similar to isDoingREST  - if the request contains a REST (i.e. format=POX | GET | REST) call, then we set this to TRUE
     public static final String INVOKED_REST = "invokedREST";
 
     public static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
     public static final String RELAY_EARLY_BUILD = "relay_early_build";
     public static final String RAW_PAYLOAD = "RAW_PAYLOAD";
-
+    public static final String HTTP_SOURCE_CONFIGURATION = "HTTP_SOURCE_CONFIGURATION";
+    public static final String HTTP_TARGET_CONFIGURATION = "HTTP_TARGET_CONFIGURATION";
     public static final String POOLED_BYTE_BUFFER_FACTORY = "POOLED_BYTE_BUFFER_FACTORY";
     public static final String MESSAGE_OUTPUT_FORMAT = "MESSAGE_OUTPUT_FORMAT";
     public static final String FORCE_SOAP_FAULT = "FORCE_SOAP_FAULT";
-    public static final String FORCE_SC_ACCEPTED = "FORCE_SC_ACCEPTED";
     public static final String NIO_ACK_REQUESTED = "NIO-ACK-Requested";
     public static final String WSDL_REQUEST_HANDLED = "WSDL_REQUEST_HANDLED";
     // used to define the default content type as a parameter in the axis2.xml
     public static final String REQUEST_CONTENT_TYPE = "DEFAULT_REQUEST_CONTENT_TYPE";
-
+    public static final String VALID_CACHED_RESPONSE = "VALID_CACHED_RESPONSE";
+    public static final String ETAG_HEADER = "ETag";
 
     // move later
     public static final String CARBON_SERVER_XML_NAMESPACE = "http://wso2.org/projects/carbon/carbon.xml";
@@ -91,6 +94,8 @@ public class BridgeConstants {
     private static final String LOCAL_HOST = "localhost";
     public static final String HTTP_DEFAULT_HOST = "0.0.0.0";
     public static final String TO = "TO";
+    public static final String HTTP_HOST = "host";
+    public static final String HTTP_PORT = "port";
 
     // Logging related runtime parameter names
     public static final String HTTP_TRACE_LOG = "http.tracelog";
@@ -111,5 +116,91 @@ public class BridgeConstants {
     public static final String TYPE = "Type";
     public static final String PASSWORD = "Password";
     public static final String KEY_PASSWORD = "KeyPassword";
+
+    //Http method type constants to be used in synapse
+    public static final String HTTP_HEAD = "HEAD";
+    public static final String HTTP_GET = "GET";
+    public static final String HTTP_POST = "POST";
+    public static final String HTTP_DELETE = "DELETE";
+    public static final String HTTP_PUT = "PUT";
+    public static final String HTTP_OPTIONS = "OPTIONS";
+    public static final String HTTP_CONNECT = "CONNECT";
+
+    public static final String HTTP_STATUS_CODE_SENT_FROM_BACKEND = "HTTP_STATUS_CODE_SENT_FROM_BACKEND";
+    public static final String HTTP_REASON_PHRASE_SENT_FROM_BACKEND = "HTTP_REASON_PHRASE_SENT_FROM_BACKEND";
+
+
+    /**
+     * When ESB receives a soap fault as a HTTP 500 message, ESB will forward this fault to client with status code 200.
+     */
+    public static final String FAULTS_AS_HTTP_200 = "FAULTS_AS_HTTP_200";
+
+    public static final String SC_ACCEPTED = "SC_ACCEPTED";
+
+    /**
+     * The HTTP status code.
+     */
+    public static final String HTTP_SC = "HTTP_SC";
+
+    /**
+     * HTTP response's Reason- Phrase that is sent by the backend. For example, if the backend sends
+     * the response's status as HTTP/1.1 200 OK, then the value of HTTP_SC_DESC is OK.
+     */
+    public static final String HTTP_SC_DESC = "HTTP_SC_DESC";
+
+    /**
+     * Force HTTP 1.0 for outgoing HTTP messages.
+     */
+    public static final String FORCE_HTTP_1_0 = "FORCE_HTTP_1.0";
+
+    /**
+     * If you set this to true, it disables HTTP chunking for outgoing messages.
+     */
+    public static final String DISABLE_CHUNKING = "DISABLE_CHUNKING";
+
+    /**
+     * The value of this property will be set as the HTTP host header of outgoing request.
+     */
+    public static final String REQUEST_HOST_HEADER = "REQUEST_HOST_HEADER";
+
+    /**
+     * Disables HTTP keep alive for outgoing requests.
+     */
+    public static final String NO_KEEPALIVE = "NO_KEEPALIVE";
+
+    /**
+     * This property makes the outgoing URL of the ESB a complete URL.
+     * This is important when we talk through a Proxy Server.
+     */
+    public static final String POST_TO_URI = "POST_TO_URI";
+
+    /**
+     * If the request sent by the client contains the ‘Content-Length’ header, this property allows the ESB to send
+     * the request with the content length (without HTTP chunking) to the back end server.
+     */
+    public static final String FORCE_HTTP_CONTENT_LENGTH = "FORCE_HTTP_CONTENT_LENGTH";
+
+    /**
+     * When set to true, this property forces a 202 HTTP response to the client immediately after the current
+     * execution thread finishes, so that the client stops waiting for a response.
+     */
+    public static final String FORCE_SC_ACCEPTED = "FORCE_SC_ACCEPTED";
+
+    public static final String IGNORE_SC_ACCEPTED = "IGNORE_SC_ACCEPTED";
+
+    /**
+     * This property determines whether the HTTP Etag should be enabled for the request or not.
+     * HTTP Etag is a mechanism provided by HTTP for Web cache validation.
+     */
+    public static final String HTTP_ETAG_ENABLED = "HTTP_ETAG";
+
+    // This property can be used to remove character encode. By default character encoding is enabled in the ESB profile.
+    // If this property is set to 'false', the 'CHARACTER_SET_ENCODING' property cannot be used.
+    public static final String SET_CHARACTER_ENCODING = "setCharacterEncoding";
+
+    /**
+     * The message context property name that holds the error code for the last encountered exception.
+     */
+    public static final String ERROR_CODE = "ERROR_CODE";
 
 }

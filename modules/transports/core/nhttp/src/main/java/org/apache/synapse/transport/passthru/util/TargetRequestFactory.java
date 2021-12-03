@@ -130,8 +130,8 @@ public class TargetRequestFactory {
 					// if multipart related message type and unless if message
 					// not get build we should
 					// skip of setting formatter specific content Type
-					if (messageType.indexOf(HTTPConstants.MEDIA_TYPE_MULTIPART_RELATED) == -1
-							&& messageType.indexOf(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA) == -1) {
+					if (!messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_RELATED)
+							&& !messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)) {
 						Map msgCtxheaders = (Map) o;
 						if (msgCtxheaders != null && !cType.isEmpty()) {
 							msgCtxheaders.put(HTTP.CONTENT_TYPE, cType);
@@ -142,9 +142,8 @@ public class TargetRequestFactory {
 					// if messageType is related to multipart and if message
 					// already built we need to set new
 					// boundary related content type at Content-Type header
-					if (builderInvoked
-							&& (((messageType.indexOf(HTTPConstants.MEDIA_TYPE_MULTIPART_RELATED) != -1) 
-									|| (messageType.indexOf(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA) != -1)))) {
+					if (builderInvoked && (((messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_RELATED))
+                            || (messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA))))) {
 						request.addHeader(HTTP.CONTENT_TYPE, cType);
 					}
 

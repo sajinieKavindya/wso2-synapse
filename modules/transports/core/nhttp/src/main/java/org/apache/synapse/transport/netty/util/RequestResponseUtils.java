@@ -42,9 +42,9 @@ import org.apache.axis2.util.MessageProcessorSelector;
 import org.apache.http.protocol.HTTP;
 import org.apache.log4j.Logger;
 import org.apache.synapse.transport.netty.BridgeConstants;
+import org.apache.synapse.transport.netty.config.BaseConfiguration;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
-import org.apache.synapse.transport.netty.sender.SourceResponseDelete;
 import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.SecureVaultValueReader;
@@ -53,14 +53,17 @@ import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.securevault.SecretResolver;
 import org.wso2.securevault.SecretResolverFactory;
+import org.wso2.transport.http.netty.contract.HttpResponseFuture;
 import org.wso2.transport.http.netty.contract.config.InboundMsgSizeValidationConfig;
-import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
 import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
 import org.wso2.transport.http.netty.contract.config.SslConfiguration;
+import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -105,6 +108,7 @@ public class RequestResponseUtils {
 
         String transportName;
         if (sourceConfiguration.getScheme().isSSL()) {
+            // TODO: decide later
             transportName = BridgeConstants.PROTOCOL_HTTPS;
         } else {
             transportName = BridgeConstants.PROTOCOL_HTTP;
@@ -130,6 +134,8 @@ public class RequestResponseUtils {
 
         msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL, new HttpCoreRequestResponseTransport(msgCtx));
 
+        msgCtx.setProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION, sourceConfiguration);
+
         // Set the original incoming carbon message as a property
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, incomingCarbonMsg);
         // This property is used when responding back to the client
@@ -137,180 +143,83 @@ public class RequestResponseUtils {
         return msgCtx;
     }
 
-    /**
-     * Set content type headers along with the character encoding if content type header is not preserved.
-     *
-     * @param msgContext           message context
-     * @param sourceResponseDelete source response
-     * @param formatter            response formatter
-     * @param format               response format
-     */
-    public static void setContentType(MessageContext msgContext, SourceResponseDelete sourceResponseDelete,
-                                      MessageFormatter formatter, OMOutputFormat format) {
+//    /**
+//     * Set content type headers along with the character encoding if content type header is not preserved.
+//     *
+//     * @param msgContext           message context
+//     * @param sourceResponseDelete source response
+//     * @param formatter            response formatter
+//     * @param format               response format
+//     */
+//    public static void setContentType(MessageContext msgContext, SourceResponseDelete sourceResponseDelete,
+//                                      MessageFormatter formatter, OMOutputFormat format) {
+//
+//        if (DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
+//            return;
+//        }
+//        Object contentTypeInMsgCtx =
+//                msgContext.getProperty(org.apache.axis2.Constants.Configuration.CONTENT_TYPE);
+//        boolean isContentTypeSetFromMsgCtx = false;
+//
+//        // If ContentType header is set in the axis2 message context, use it.
+//        if (contentTypeInMsgCtx != null) {
+//            String contentTypeValueInMsgCtx = contentTypeInMsgCtx.toString();
+//            // Skip multipart/related as it should be taken from formatter.
+//            if (!(contentTypeValueInMsgCtx.contains(
+//                    PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED) ||
+//                    contentTypeValueInMsgCtx.contains(PassThroughConstants.CONTENT_TYPE_MULTIPART_FORM_DATA))) {
+//
+//                // adding charset only if charset is not available,
+//                if (format != null && contentTypeValueInMsgCtx.indexOf(HTTPConstants.CHAR_SET_ENCODING) == -1 &&
+//                        !"false".equals(msgContext.getProperty(PassThroughConstants.SET_CHARACTER_ENCODING))) {
+//                    String encoding = format.getCharSetEncoding();
+//                    if (encoding != null) {
+//                        contentTypeValueInMsgCtx += "; charset=" + encoding;
+//                    }
+//                }
+//                sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
+//                sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE, contentTypeValueInMsgCtx);
+//                isContentTypeSetFromMsgCtx = true;
+//            }
+//        }
+//
+//        // If ContentType is not set from msg context, get the formatter ContentType
+//        if (!isContentTypeSetFromMsgCtx) {
+//            sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
+//            sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE,
+//                    formatter.getContentType(msgContext, format, msgContext.getSoapAction()));
+//        }
+//    }
 
-        if (DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
-            return;
+    public static boolean shouldInvokeFormatterToWriteBody(MessageContext msgContext) {
+
+        if (Objects.isNull(msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE))) {
+            return true;
         }
-        Object contentTypeInMsgCtx =
-                msgContext.getProperty(org.apache.axis2.Constants.Configuration.CONTENT_TYPE);
-        boolean isContentTypeSetFromMsgCtx = false;
+        return msgContext.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED);
 
-        // If ContentType header is set in the axis2 message context, use it.
-        if (contentTypeInMsgCtx != null) {
-            String contentTypeValueInMsgCtx = contentTypeInMsgCtx.toString();
-            // Skip multipart/related as it should be taken from formatter.
-            if (!(contentTypeValueInMsgCtx.contains(
-                    PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED) ||
-                    contentTypeValueInMsgCtx.contains(PassThroughConstants.CONTENT_TYPE_MULTIPART_FORM_DATA))) {
-
-                // adding charset only if charset is not available,
-                if (format != null && contentTypeValueInMsgCtx.indexOf(HTTPConstants.CHAR_SET_ENCODING) == -1 &&
-                        !"false".equals(msgContext.getProperty(PassThroughConstants.SET_CHARACTER_ENCODING))) {
-                    String encoding = format.getCharSetEncoding();
-                    if (encoding != null) {
-                        contentTypeValueInMsgCtx += "; charset=" + encoding;
-                    }
-                }
-                sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
-                sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE, contentTypeValueInMsgCtx);
-                isContentTypeSetFromMsgCtx = true;
-            }
-        }
-
-        // If ContentType is not set from msg context, get the formatter ContentType
-        if (!isContentTypeSetFromMsgCtx) {
-            sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
-            sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE,
-                    formatter.getContentType(msgContext, format, msgContext.getSoapAction()));
-        }
     }
 
     /**
-     * Gets an HttpMessageDataStreamer instance that provides input and output stream by taking the HttpCarbonMessage.
+     * Get the response data streamer that should be used for serializing data.
      *
-     * @param httpCarbonMessage HttpCarbonMessage from which we need a HttpMessageDataStreamer
-     * @return HttpMessageDataStreamer instance
+     * @param outboundResponse Represents native response
+     * @return HttpMessageDataStreamer that should be used for serializing
      */
-    public static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage httpCarbonMessage) {
+    public static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundResponse) {
 
         final HttpMessageDataStreamer outboundMsgDataStreamer;
         final PooledDataStreamerFactory pooledDataStreamerFactory = (PooledDataStreamerFactory)
-                httpCarbonMessage.getProperty(BridgeConstants.POOLED_BYTE_BUFFER_FACTORY);
+                outboundResponse.getProperty(BridgeConstants.POOLED_BYTE_BUFFER_FACTORY);
         if (pooledDataStreamerFactory != null) {
-            outboundMsgDataStreamer = pooledDataStreamerFactory.createHttpDataStreamer(httpCarbonMessage);
+            outboundMsgDataStreamer = pooledDataStreamerFactory.createHttpDataStreamer(outboundResponse);
         } else {
-            outboundMsgDataStreamer = new HttpMessageDataStreamer(httpCarbonMessage);
+            outboundMsgDataStreamer = new HttpMessageDataStreamer(outboundResponse);
         }
         return outboundMsgDataStreamer;
     }
 
-    /**
-     * Remove unwanted headers from the http response of outgoing request. These are headers which
-     * should be dictated by the transport and not the user. We remove these as these may get
-     * copied from the request messages.
-     *
-     * @param msgContext the Axis2 Message context from which these headers should be removed
-     */
-    public static void removeUnwantedHeaders(MessageContext msgContext) {
 
-        Map transportHeaders = (Map) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
-        Map excessHeaders = (Map) msgContext.getProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS);
-
-        if (transportHeaders != null && !transportHeaders.isEmpty()) {
-            //a hack which takes the original content header
-            if (transportHeaders.get(HTTP.CONTENT_LEN) != null) {
-                msgContext.setProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH,
-                        transportHeaders.get(HTTP.CONTENT_LEN));
-            }
-            removeUnwantedHeadersFromHeaderMap(transportHeaders);
-        }
-
-        if (excessHeaders != null && !excessHeaders.isEmpty()) {
-            removeUnwantedHeadersFromHeaderMap(excessHeaders);
-        }
-    }
-
-    /**
-     * Remove unwanted headers from the given header map.
-     *
-     * @param headers http header map
-     */
-    private static void removeUnwantedHeadersFromHeaderMap(Map headers) {
-
-        Iterator iter = headers.keySet().iterator();
-        while (iter.hasNext()) {
-            String headerName = (String) iter.next();
-            if (HTTP.TRANSFER_ENCODING.equalsIgnoreCase(headerName)) {
-                iter.remove();
-            }
-
-            if (HTTP.CONN_DIRECTIVE.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONN_DIRECTIVE)) {
-                iter.remove();
-            }
-
-            if (HTTP.CONN_KEEP_ALIVE.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONN_KEEP_ALIVE)) {
-                iter.remove();
-            }
-
-            if (HTTP.CONTENT_LEN.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_LEN)) {
-                iter.remove();
-            }
-
-            if (HTTP.DATE_HEADER.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.DATE_HEADER)) {
-                iter.remove();
-            }
-
-            if (HTTP.SERVER_HEADER.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.SERVER_HEADER)) {
-                iter.remove();
-            }
-
-            if (HTTP.USER_AGENT.equalsIgnoreCase(headerName)
-                    && !DataHolder.getInstance().isPreserveHttpHeader(HTTP.USER_AGENT)) {
-                iter.remove();
-            }
-        }
-    }
-
-    public static String getContentType(MessageContext msgCtx, boolean isContentTypePreservedHeader,
-                                        Map trpHeaders) throws AxisFault {
-
-        String setEncoding = (String) msgCtx.getProperty(PassThroughConstants.SET_CHARACTER_ENCODING);
-
-        //If incoming transport isn't HTTP, transport headers can be null. Therefore null check is required
-        // and if headers not null check whether request comes with Content-Type header before preserving Content-Type
-        //Need to avoid this for multipart headers, need to add MIME Boundary property
-        if (trpHeaders != null
-                && (trpHeaders).get(HTTPConstants.HEADER_CONTENT_TYPE) != null
-                && (isContentTypePreservedHeader || PassThroughConstants.VALUE_FALSE.equals(setEncoding))
-                && !isMultipartContent((trpHeaders).get(HTTPConstants.HEADER_CONTENT_TYPE).toString())) {
-            if (msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE) != null) {
-                return (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
-            } else if (msgCtx.getProperty(Constants.Configuration.MESSAGE_TYPE) != null) {
-                return (String) msgCtx.getProperty(Constants.Configuration.MESSAGE_TYPE);
-            }
-        }
-
-        MessageFormatter formatter = MessageProcessorSelector.getMessageFormatter(msgCtx);
-        OMOutputFormat format = PassThroughTransportUtils.getOMOutputFormat(msgCtx);
-
-        if (formatter != null) {
-            return formatter.getContentType(msgCtx, format, msgCtx.getSoapAction());
-
-        } else {
-            String contentType = (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
-            if (contentType != null) {
-                return contentType;
-            } else {
-                return new SOAPMessageFormatter().getContentType(
-                        msgCtx, format, msgCtx.getSoapAction());
-            }
-        }
-    }
 
     /**
      * Check whether the content type is multipart or not.
@@ -332,8 +241,7 @@ public class RequestResponseUtils {
      */
     public static boolean ignoreMessageBody(MessageContext msgContext) {
 
-        return HTTPConstants.HTTP_METHOD_GET.equals(msgContext.getProperty(Constants.Configuration.HTTP_METHOD))
-                || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
+        return HttpUtils.isGetRequest(msgContext) || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
     }
 
     /**
@@ -408,6 +316,7 @@ public class RequestResponseUtils {
      */
     public static boolean isRESTRequest(String contentType) {
 
+        // TODO: verify for text/xml
         return contentType != null && (contentType.contains(HTTPConstants.MEDIA_TYPE_APPLICATION_XML)
                 || contentType.contains(HTTPConstants.MEDIA_TYPE_X_WWW_FORM)
                 || contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
@@ -420,7 +329,7 @@ public class RequestResponseUtils {
     /**
      * Populates the SOAP version based on the given Content-Type.
      *
-     * @param msgContext axis2 message context
+     * @param msgContext  axis2 message context
      * @param contentType Content type of the request.
      * @return 0 if the content type is null. return 2 if the content type is application/soap+xml. Otherwise 1
      */
@@ -443,9 +352,9 @@ public class RequestResponseUtils {
     /**
      * Checks if the request should be considered as REST.
      *
-     * @param msgContext axis2 message context
-     * @param contentType content-type of the request
-     * @param soapVersion SOAP version
+     * @param msgContext       axis2 message context
+     * @param contentType      content-type of the request
+     * @param soapVersion      SOAP version
      * @param soapActionHeader SOAPAction header
      * @return whether the request should be considered as REST
      */
@@ -534,30 +443,6 @@ public class RequestResponseUtils {
         }
     }
 
-    public static KeepAliveConfig getKeepAliveConfig(boolean keepAlive) throws AxisFault {
-
-        if (keepAlive) {
-            return getKeepAliveConfig(BridgeConstants.ALWAYS);
-        } else {
-            return getKeepAliveConfig(BridgeConstants.NEVER);
-        }
-    }
-
-    public static KeepAliveConfig getKeepAliveConfig(String keepAliveConfig) throws AxisFault {
-
-        switch (keepAliveConfig) {
-            case BridgeConstants.AUTO:
-                return KeepAliveConfig.AUTO;
-            case BridgeConstants.ALWAYS:
-                return KeepAliveConfig.ALWAYS;
-            case BridgeConstants.NEVER:
-                return KeepAliveConfig.NEVER;
-            default:
-                throw new AxisFault(
-                        "Invalid configuration found for Keep-Alive: " + keepAliveConfig);
-        }
-    }
-
     /**
      * Returns Listener configuration instance populated with source configuration.
      *
@@ -618,32 +503,15 @@ public class RequestResponseUtils {
 
     public static ListenerConfiguration setSslConfig(TransportInDescription transportIn,
                                                      ListenerConfiguration listenerConfiguration,
-                                                     SourceConfiguration sourceConfiguration) throws AxisFault {
+                                                     BaseConfiguration sourceConfiguration) throws AxisFault {
 
+        List<org.wso2.transport.http.netty.contract.config.Parameter> serverParamList = new ArrayList<>();
         listenerConfiguration.setScheme(BridgeConstants.PROTOCOL_HTTPS);
-
-        Parameter keyParam = transportIn.getParameter(BridgeConstants.KEY_STORE);
-        Parameter trustParam = transportIn.getParameter(BridgeConstants.TRUST_STORE);
-        Parameter clientAuthParam = transportIn.getParameter(BridgeConstants.SSL_VERIFY_CLIENT);
-        Parameter httpsProtocolsParam = transportIn.getParameter(BridgeConstants.HTTPS_PROTOCOL);
-        Parameter sslParameter = transportIn.getParameter(BridgeConstants.SSL_PROTOCOL);
-        Parameter preferredCiphersParam = transportIn.getParameter(BridgeConstants.PREFERRED_CIPHERS);
-        Parameter cvpParam = transportIn.getParameter(BridgeConstants.CLIENT_REVOCATION);
-        Parameter sessionTimeoutParam = transportIn.getParameter(BridgeConstants.SSL_SESSION_TIMEOUT);
-        Parameter handshakeTimeoutParam = transportIn.getParameter(BridgeConstants.SSL_HANDSHAKE_TIMEOUT);
         // TODO: evaluate shareSession param. Bhashinee
 
+        // evaluate keystore field
+        Parameter keyParam = transportIn.getParameter(BridgeConstants.KEY_STORE);
         OMElement keyStoreEl = keyParam != null ? keyParam.getParameterElement().getFirstElement() : null;
-        OMElement trustStoreEl = trustParam != null ? trustParam.getParameterElement().getFirstElement() : null;
-        OMElement clientAuthEl = clientAuthParam != null ? clientAuthParam.getParameterElement() : null;
-        OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
-        String sslProtocol = sslParameter != null ? sslParameter.getValue().toString() : "TLS";
-        OMElement preferredCiphersEl = preferredCiphersParam != null
-                ? preferredCiphersParam.getParameterElement() : null;
-        OMElement cvpEl = cvpParam != null ? cvpParam.getParameterElement() : null;
-        String sessionTimeoutEl = sessionTimeoutParam != null ? sessionTimeoutParam.getValue().toString() : null;
-        String handshakeTimeoutEl = handshakeTimeoutParam != null
-                ? handshakeTimeoutParam.getParameterElement().toString() : null;
 
         SecretResolver secretResolver;
         ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
@@ -652,23 +520,44 @@ public class RequestResponseUtils {
         } else {
             secretResolver = SecretResolverFactory.create(keyStoreEl, false);
         }
+        populateKeyStoreConfigs(keyStoreEl, listenerConfiguration, secretResolver);
 
-        List<org.wso2.transport.http.netty.contract.config.Parameter> serverParamList = new ArrayList<>();
+        // evaluate truststore field
+        Parameter trustParam = transportIn.getParameter(BridgeConstants.TRUST_STORE);
+        OMElement trustStoreEl = trustParam != null ? trustParam.getParameterElement().getFirstElement() : null;
+        populateTrustStoreConfigs(trustStoreEl, listenerConfiguration, secretResolver);
 
-        evaluateKeyStoreField(keyStoreEl, listenerConfiguration, secretResolver);
-
-        evaluateTrustStoreField(trustStoreEl, listenerConfiguration, secretResolver);
-
+        // evaluate SSLVerifyClient field
+        Parameter clientAuthParam = transportIn.getParameter(BridgeConstants.SSL_VERIFY_CLIENT);
+        OMElement clientAuthEl = clientAuthParam != null ? clientAuthParam.getParameterElement() : null;
         final String s = clientAuthEl != null ? clientAuthEl.getText() : "";
         listenerConfiguration.setVerifyClient(s);
 
-        evaluateProtocolField(httpsProtocolsEl, sslProtocol, listenerConfiguration, serverParamList);
+        // evaluate HttpsProtocols and SSLProtocol fields
+        Parameter httpsProtocolsParam = transportIn.getParameter(BridgeConstants.HTTPS_PROTOCOL);
+        OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
+        Parameter sslParameter = transportIn.getParameter(BridgeConstants.SSL_PROTOCOL);
+        String sslProtocol = sslParameter != null ? sslParameter.getValue().toString() : "TLS";
+        populateProtocolConfigs(httpsProtocolsEl, sslProtocol, listenerConfiguration, serverParamList);
 
-        evaluateCertValidationField(cvpEl, listenerConfiguration);
+        // evaluate PreferredCiphers field
+        Parameter preferredCiphersParam = transportIn.getParameter(BridgeConstants.PREFERRED_CIPHERS);
+        OMElement preferredCiphersEl = preferredCiphersParam != null
+                ? preferredCiphersParam.getParameterElement() : null;
+        populateCiphersConfigs(preferredCiphersEl, serverParamList);
 
-        evaluateCiphersField(preferredCiphersEl, serverParamList);
+        // evaluate CertificateRevocationVerifier field
+        Parameter cvpParam = transportIn.getParameter(BridgeConstants.CLIENT_REVOCATION);
+        OMElement cvpEl = cvpParam != null ? cvpParam.getParameterElement() : null;
+        populateCertValidationConfigs(cvpEl, listenerConfiguration);
 
-        evaluateCommonFields(sessionTimeoutEl, handshakeTimeoutEl, listenerConfiguration);
+        // evaluate common fields
+        Parameter sessionTimeoutParam = transportIn.getParameter(BridgeConstants.SSL_SESSION_TIMEOUT);
+        Parameter handshakeTimeoutParam = transportIn.getParameter(BridgeConstants.SSL_HANDSHAKE_TIMEOUT);
+        String sessionTimeoutEl = sessionTimeoutParam != null ? sessionTimeoutParam.getValue().toString() : null;
+        String handshakeTimeoutEl = handshakeTimeoutParam != null
+                ? handshakeTimeoutParam.getParameterElement().toString() : null;
+        populateCommonConfigs(sessionTimeoutEl, handshakeTimeoutEl, listenerConfiguration);
 
         if (!serverParamList.isEmpty()) {
             listenerConfiguration.setParameters(serverParamList);
@@ -679,8 +568,8 @@ public class RequestResponseUtils {
         return listenerConfiguration;
     }
 
-    private static void evaluateKeyStoreField(OMElement keyStoreEl, SslConfiguration sslConfiguration,
-                                              SecretResolver secretResolver) throws AxisFault {
+    public static void populateKeyStoreConfigs(OMElement keyStoreEl, SslConfiguration sslConfiguration,
+                                               SecretResolver secretResolver) throws AxisFault {
 
         if (keyStoreEl != null) {
             String location = getValueOfElementWithLocalName(keyStoreEl, BridgeConstants.STORE_LOCATION);
@@ -700,16 +589,17 @@ public class RequestResponseUtils {
             }
             String storePassword = SecureVaultValueReader.getSecureVaultValue(secretResolver, storePasswordEl);
             String keyPassword = SecureVaultValueReader.getSecureVaultValue(secretResolver, keyPasswordEl);
-            // TODO: verify this
+            // TODO: verify this -> added the sslConfiguration.setCertPass(keyPassword);
 
             sslConfiguration.setKeyStoreFile(location);
             sslConfiguration.setKeyStorePass(storePassword);
+            sslConfiguration.setCertPass(keyPassword);
             sslConfiguration.setTLSStoreType(type);
         }
     }
 
-    private static void evaluateTrustStoreField(OMElement trustStoreEl, SslConfiguration sslConfiguration,
-                                                SecretResolver secretResolver) throws AxisFault {
+    public static void populateTrustStoreConfigs(OMElement trustStoreEl, SslConfiguration sslConfiguration,
+                                                 SecretResolver secretResolver) throws AxisFault {
 
         String location = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.STORE_LOCATION);
         // TODO: verify this
@@ -742,17 +632,10 @@ public class RequestResponseUtils {
 
         if (maxInitialLineLength >= 0) {
             sizeValidationConfig.setMaxInitialLineLength(Math.toIntExact(maxInitialLineLength));
-        } else {
-            // TODO: disable this
-            throw new AxisFault(
-                    "Invalid configuration found for max initial line length : " + maxInitialLineLength);
         }
 
         if (maxHeaderSize >= 0) {
             sizeValidationConfig.setMaxHeaderSize(Math.toIntExact(maxHeaderSize));
-        } else {
-            // TODO: disable this
-            throw new AxisFault("Invalid configuration found for maxHeaderSize : " + maxHeaderSize);
         }
 
         if (maxEntityBodySize != -1) {
@@ -776,7 +659,7 @@ public class RequestResponseUtils {
         return value;
     }
 
-    public static void evaluateCertValidationField(OMElement cvpEl, SslConfiguration sslConfiguration) {
+    public static void populateCertValidationConfigs(OMElement cvpEl, SslConfiguration sslConfiguration) {
 
         final String cvEnable = cvpEl != null ?
                 cvpEl.getAttribute(new QName("enable")).getAttributeValue() : null;
@@ -803,8 +686,8 @@ public class RequestResponseUtils {
         }
     }
 
-    public static void evaluateCommonFields(String sessionTimeout, String handshakeTimeout,
-                                            SslConfiguration sslConfiguration) throws AxisFault {
+    public static void populateCommonConfigs(String sessionTimeout, String handshakeTimeout,
+                                             SslConfiguration sslConfiguration) throws AxisFault {
 
         if (Objects.nonNull(sessionTimeout) && !sessionTimeout.isEmpty()) {
             try {
@@ -825,11 +708,18 @@ public class RequestResponseUtils {
         } else {
             // default value
         }
+
+//        if (!(sslConfiguration instanceof ListenerConfiguration)) {
+//            boolean hostNameVerificationEnabled = secureSocket.getBooleanValue(
+//                    HttpConstants.SECURESOCKET_CONFIG_HOST_NAME_VERIFICATION_ENABLED);
+//            sslConfiguration.setHostNameVerificationEnabled(hostNameVerificationEnabled);
+//        }
+
     }
 
-    private static void evaluateProtocolField(OMElement httpsProtocolsEl, String sslProtocol,
-                                              SslConfiguration sslConfiguration,
-                                              List<org.wso2.transport.http.netty.contract.config.Parameter> paramList) {
+    private static void populateProtocolConfigs(
+            OMElement httpsProtocolsEl, String sslProtocol, SslConfiguration sslConfiguration,
+            List<org.wso2.transport.http.netty.contract.config.Parameter> paramList) {
 
         if (httpsProtocolsEl != null) {
             String configuredHttpsProtocols = httpsProtocolsEl.getText().replaceAll("\\s", "");
@@ -848,8 +738,8 @@ public class RequestResponseUtils {
         sslConfiguration.setSSLProtocol(sslProtocol);
     }
 
-    private static void evaluateCiphersField(OMElement preferredCiphersEl,
-                                             List<org.wso2.transport.http.netty.contract.config.Parameter> paramList) {
+    private static void populateCiphersConfigs(
+            OMElement preferredCiphersEl, List<org.wso2.transport.http.netty.contract.config.Parameter> paramList) {
 
         if (preferredCiphersEl != null) {
             String preferredCiphers = preferredCiphersEl.getText().replaceAll("\\s", "");
@@ -866,5 +756,48 @@ public class RequestResponseUtils {
 
         host = host != null ? host : "0.0.0.0";
         return host + ":" + port;
+    }
+
+    /**
+     * This method should never be called directly to send out responses for ballerina HTTP 1.1. Use
+     * PipeliningHandler's sendPipelinedResponse() method instead.
+     *
+     * @param requestMsg  Represent the request message
+     * @param responseMsg Represent the corresponding response
+     * @return HttpResponseFuture that represent the future results
+     */
+    public static HttpResponseFuture sendOutboundResponse(HttpCarbonMessage requestMsg,
+                                                          HttpCarbonMessage responseMsg) throws AxisFault {
+
+        HttpResponseFuture responseFuture;
+        try {
+            responseFuture = requestMsg.respond(responseMsg);
+        } catch (ServerConnectorException e) {
+            throw new AxisFault("Error occurred during response", e);
+        }
+        return responseFuture;
+    }
+
+    public static void closeMessageOutputStream(OutputStream messageOutputStream) {
+
+        try {
+            if (messageOutputStream != null) {
+                messageOutputStream.close();
+            }
+        } catch (IOException e) {
+            LOGGER.error("Couldn't close message output stream", e);
+        }
+    }
+
+    public static void handleException(String s, Exception e) throws AxisFault {
+
+        LOGGER.error(s, e);
+        throw new AxisFault(s, e);
+    }
+
+    public static void handleException(String msg) throws AxisFault {
+
+        LOGGER.error(msg);
+        throw new AxisFault(msg);
     }
 }

@@ -113,15 +113,15 @@ public class DeferredMessageBuilder {
         // TODO: Find a suitable substitution from Netty Transport
         // in = HTTPTransportUtils.handleGZip(msgCtx, in);
 
-        AxisConfiguration configuration = msgCtx.getConfigurationContext().getAxisConfiguration();
-        Parameter useFallbackParameter =
-                configuration.getParameter(Constants.Configuration.USE_DEFAULT_FALLBACK_BUILDER);
-
-        boolean useFallbackBuilder = false;
-
-        if (useFallbackParameter != null) {
-            JavaUtils.isTrueExplicitly(useFallbackParameter.getValue(), useFallbackBuilder);
-        }
+//        AxisConfiguration configuration = msgCtx.getConfigurationContext().getAxisConfiguration();
+//        Parameter useFallbackParameter =
+//                configuration.getParameter(Constants.Configuration.USE_DEFAULT_FALLBACK_BUILDER);
+//
+//        boolean useFallbackBuilder = false;
+//
+//        if (useFallbackParameter != null) {
+//            JavaUtils.isTrueExplicitly(useFallbackParameter.getValue(), useFallbackBuilder);
+//        }
 
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
 
