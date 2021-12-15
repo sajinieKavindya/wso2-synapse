@@ -25,25 +25,32 @@ import org.apache.axiom.soap.SOAPEnvelope;
 import org.apache.axiom.soap.impl.llom.soap11.SOAP11Factory;
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.Constants;
-import org.apache.axis2.builder.*;
+import org.apache.axis2.builder.ApplicationXMLBuilder;
+import org.apache.axis2.builder.Builder;
+import org.apache.axis2.builder.BuilderUtil;
+import org.apache.axis2.builder.MIMEBuilder;
+import org.apache.axis2.builder.MTOMBuilder;
+import org.apache.axis2.builder.SOAPBuilder;
+import org.apache.axis2.builder.XFormURLEncodedBuilder;
 import org.apache.axis2.context.MessageContext;
-import org.apache.axis2.description.Parameter;
-import org.apache.axis2.engine.AxisConfiguration;
 import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.TransportUtils;
-import org.apache.axis2.transport.http.*;
-import org.apache.axis2.util.JavaUtils;
+import org.apache.axis2.transport.http.ApplicationXMLFormatter;
+import org.apache.axis2.transport.http.HTTPConstants;
+import org.apache.axis2.transport.http.MultipartFormDataFormatter;
+import org.apache.axis2.transport.http.SOAPMessageFormatter;
+import org.apache.axis2.transport.http.XFormURLEncodedFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 
-import javax.xml.stream.XMLStreamException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import javax.xml.stream.XMLStreamException;
 
 
 /**

@@ -28,7 +28,8 @@ import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.description.TransportOutDescription;
 import org.apache.axis2.handlers.AbstractHandler;
 import org.apache.axis2.transport.TransportSender;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
@@ -51,7 +52,7 @@ import java.util.List;
  */
 public class Axis2HttpTransportSender extends AbstractHandler implements TransportSender {
 
-    private static final Logger LOG = Logger.getLogger(Axis2HttpTransportSender.class);
+    private static final Log LOG = LogFactory.getLog(Axis2HttpTransportSender.class);
 
     /**
      * The instance that handles connection pool management.
@@ -94,14 +95,10 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         }
 
         EndpointReference destinationEPR = RequestResponseUtils.getDestinationEPR(msgCtx);
-        if (destinationEPR != null) {
-            if (destinationEPR.hasNoneAddress()) {
-                handleException("Cannot send the message to " + AddressingConstants.Final.WSA_NONE_URI);
-            }
+        if (isBackendRequest(destinationEPR)) {
             try {
                 URL destinationURL = new URL(destinationEPR.getAddress());
-                // Send request to the backend service.
-                sendForward(msgCtx, destinationURL);
+                sendRequestToBackendService(msgCtx, destinationURL);
             } catch (MalformedURLException e) {
                 handleException("Malformed URL in the target EPR", e);
             } catch (IOException e) {
@@ -109,7 +106,6 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                         + destinationEPR.getAddress(), e);
             }
         } else {
-            // Response submission back to the client
             HttpCarbonMessage clientRequest =
                     (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
             if (clientRequest == null) {
@@ -117,16 +113,26 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
                 return InvocationResponse.ABORT;
             }
             try {
-                sendBack(msgCtx, clientRequest);
+                sendResponseToClient(msgCtx, clientRequest);
+                if (msgCtx.getOperationContext() != null) {
+                    msgCtx.getOperationContext().setProperty(Constants.RESPONSE_WRITTEN, Constants.VALUE_TRUE);
+                }
             } catch (IOException e) {
                 handleException("Error occurred while sending a response to the client", e);
             }
         }
 
-        if (msgCtx.getOperationContext() != null) {
-            msgCtx.getOperationContext().setProperty(Constants.RESPONSE_WRITTEN, Constants.VALUE_TRUE);
-        }
         return InvocationResponse.CONTINUE;
+    }
+
+    private boolean isBackendRequest(EndpointReference destinationEPR) throws AxisFault {
+        if (destinationEPR != null) {
+            if (destinationEPR.hasNoneAddress()) {
+                handleException("Cannot send the message to " + AddressingConstants.Final.WSA_NONE_URI);
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -136,7 +142,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
      * @param clientRequest original HTTP carbon request
      * @throws AxisFault if something goes wrong when creating the outbound response or responding back to the client
      */
-    private void sendBack(MessageContext msgCtx, HttpCarbonMessage clientRequest) throws AxisFault {
+    private void sendResponseToClient(MessageContext msgCtx, HttpCarbonMessage clientRequest) throws AxisFault {
 
         HttpCarbonMessage outboundResponseMsg = SourceResponseHandler.createOutboundResponseMsg(msgCtx, clientRequest);
         SourceResponseHandler.sendResponse(msgCtx, clientRequest, outboundResponseMsg);
@@ -149,27 +155,12 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
      * @param url    request URL of the backend service
      * @throws IOException if something goes wrong when sending the outbound request to the backend service
      */
-    private void sendForward(MessageContext msgCtx, URL url) throws IOException {
-
-        // TODO: Check if this is needed
-//        // NOTE:this a special case where, when the backend service expects content-length but,there is no
-//        // desire that the message should be build, if FORCE_HTTP_CONTENT_LENGTH and
-//        // COPY_CONTENT_LENGTH_FROM_INCOMING, we assume that the content coming from the client side has not
-//        // been changed
-//        boolean forceContentLength = msgCtx.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH);
-//        boolean forceContentLengthCopy = msgCtx
-//                .isPropertyTrue(PassThroughConstants.COPY_CONTENT_LENGTH_FROM_INCOMING);
-//
-//        if (forceContentLength && forceContentLengthCopy
-//                && msgCtx.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH) != null) {
-//            msgCtx.setProperty(PassThroughConstants.PASSTROUGH_MESSAGE_LENGTH, Long.parseLong(
-//                    (String) msgCtx.getProperty(PassThroughConstants.ORGINAL_CONTEN_LENGTH)));
-//        }
+    private void sendRequestToBackendService(MessageContext msgCtx, URL url) throws IOException {
 
         HttpCarbonMessage outboundRequestMsg = TargetRequestHandler.createOutboundRequestMsg(url, msgCtx,
                 targetConfiguration);
-        HttpClientConnector clientConnector = TargetRequestHandler.createSimpleHttpClient(url, msgCtx,
-                httpWsConnectorFactory, connectionManager);
+        HttpClientConnector clientConnector = TargetRequestHandler.createHttpClient(url, msgCtx,
+                httpWsConnectorFactory, connectionManager, targetConfiguration);
         TargetRequestHandler.sendRequest(clientConnector, outboundRequestMsg, msgCtx, targetConfiguration);
     }
 

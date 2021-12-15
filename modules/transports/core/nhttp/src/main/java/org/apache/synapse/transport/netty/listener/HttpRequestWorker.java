@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -39,7 +39,8 @@ import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageContextBuilder;
 import org.apache.http.HttpStatus;
 import org.apache.http.protocol.HTTP;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
@@ -64,7 +65,7 @@ import static org.apache.synapse.transport.netty.BridgeConstants.SOAP_ACTION_HEA
  */
 public class HttpRequestWorker implements Runnable {
 
-    private static final Logger LOGGER = Logger.getLogger(HttpRequestWorker.class);
+    private static final Log LOG = LogFactory.getLog(HttpRequestWorker.class);
     private final HttpCarbonMessage incomingCarbonMsg;
     private final MessageContext msgContext;
     private final ConfigurationContext configurationContext;
@@ -81,9 +82,11 @@ public class HttpRequestWorker implements Runnable {
     @Override
     public void run() {
 
+        // first, get the URI of the underlying HttpCarbonMessage and generate the service prefix
+        // and add to the message context.
         processHttpRequestUri();
 
-        // check if the request is to fetch wsdl. If so, return the message flow without going through the normal flow
+        // check if the request is to fetch wsdl. If so, return the message flow without going through the normal flow.
         if (isRequestToFetchWSDL()) {
             return;
         }
@@ -129,7 +132,7 @@ public class HttpRequestWorker implements Runnable {
      * @param httpCarbonMessage  HttpCarbonMessage in which we need to check if an entity body is present
      * @return true if the HttpCarbonMessage has an entity body enclosed
      */
-    private boolean isEntityEnclosing(HttpCarbonMessage httpCarbonMessage) {
+    private boolean doesRequestHaveEntityBody(HttpCarbonMessage httpCarbonMessage) {
 
         long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
         String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
@@ -141,7 +144,7 @@ public class HttpRequestWorker implements Runnable {
                 contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
             }
         } catch (NumberFormatException e) {
-            LOGGER.error("NumberFormatException. Invalid content length");
+            LOG.error("NumberFormatException. Invalid content length");
         }
         return contentLength > 0;
     }
@@ -179,6 +182,54 @@ public class HttpRequestWorker implements Runnable {
      */
     private void populateProperties() throws AxisFault {
 
+        // set ContentType, MessageType, and CHARACTER_SET_ENCODING properties
+        setContentTypeMessageTypeAndCharacterEncoding();
+
+        msgContext.setProperty(HTTPConstants.HTTP_METHOD, incomingCarbonMsg.getHttpMethod().toUpperCase());
+        msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty(BridgeConstants.TO)));
+
+        if (!doesRequestHaveEntityBody(incomingCarbonMsg)) {
+            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
+        }
+
+        String contentType = msgContext.getProperty(Constants.Configuration.CONTENT_TYPE).toString();
+        String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
+        int soapVersion = RequestResponseUtils.populateSOAPVersion(msgContext, contentType);
+
+        if (RequestResponseUtils.isDoingREST(msgContext, contentType, soapVersion, soapAction)) {
+            msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
+            msgContext.setDoingREST(true);
+        }
+
+        setSOAPAction(soapAction);
+        setSOAPEnvelope(soapVersion);
+    }
+
+    public void setSOAPAction(String soapAction) {
+        if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
+            soapAction = soapAction.substring(1, soapAction.length() - 1);
+            msgContext.setSoapAction(soapAction);
+        }
+    }
+
+    public void setSOAPEnvelope(int soapVersion) throws AxisFault {
+        SOAPEnvelope envelope;
+        SOAPFactory fac;
+        if (soapVersion == 1) {
+            fac = OMAbstractFactory.getSOAP11Factory();
+        } else {
+            fac = OMAbstractFactory.getSOAP12Factory();
+        }
+        envelope = fac.getDefaultEnvelope();
+        try {
+            msgContext.setEnvelope(envelope);
+        } catch (AxisFault axisFault) {
+            LOG.error("Error occurred while setting the SOAP envelope to the request message context");
+            throw axisFault;
+        }
+    }
+
+    public void setContentTypeMessageTypeAndCharacterEncoding() {
         String contentTypeHeader = incomingCarbonMsg.getHeaders().get(CONTENT_TYPE_HEADER);
         String charSetEncoding;
         String contentType;
@@ -194,9 +245,9 @@ public class HttpRequestWorker implements Runnable {
                 messageType = TransportUtils.getContentType(contentTypeHeader, msgContext);
             }
         } else {
-            if (isEntityEnclosing(incomingCarbonMsg)) {
+            if (doesRequestHaveEntityBody(incomingCarbonMsg)) {
                 Parameter param = sourceConfiguration.getConfigurationContext().getAxisConfiguration().
-                        getParameter(BridgeConstants.REQUEST_CONTENT_TYPE);
+                        getParameter(BridgeConstants.DEFAULT_REQUEST_CONTENT_TYPE);
                 if (param != null) {
                     contentType = param.getValue().toString();
                     messageType = contentType;
@@ -221,35 +272,6 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setProperty(Constants.Configuration.MESSAGE_TYPE, messageType);
         charSetEncoding = BuilderUtil.getCharSetEncoding(contentType);
         msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
-
-        msgContext.setProperty(HTTPConstants.HTTP_METHOD, incomingCarbonMsg.getHttpMethod().toUpperCase());
-        this.msgContext.setTo(new EndpointReference(
-                (String) incomingCarbonMsg.getProperty(BridgeConstants.TO)));
-
-        if (!isEntityEnclosing(incomingCarbonMsg)) {
-            this.msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
-        }
-
-        String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
-        if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
-            soapAction = soapAction.substring(1, soapAction.length() - 1);
-            msgContext.setSoapAction(soapAction);
-        }
-        int soapVersion = RequestResponseUtils.populateSOAPVersion(msgContext, contentType);
-        SOAPEnvelope envelope;
-        SOAPFactory fac;
-        if (soapVersion == 1) {
-            fac = OMAbstractFactory.getSOAP11Factory();
-        } else {
-            fac = OMAbstractFactory.getSOAP12Factory();
-        }
-        envelope = fac.getDefaultEnvelope();
-        msgContext.setEnvelope(envelope);
-
-        if (RequestResponseUtils.isDoingREST(msgContext, contentType, soapVersion, soapAction)) {
-            msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
-            msgContext.setDoingREST(true);
-        }
     }
 
     /**
@@ -294,8 +316,8 @@ public class HttpRequestWorker implements Runnable {
                 outboundResponse.setHttpStatusCode(HttpStatus.SC_ACCEPTED);
 
             } else {
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
                             + ", for MessageID : " + msgContext.getMessageID());
                 }
                 int statusCode = Integer.parseInt(msgContext.getProperty(NhttpConstants.HTTP_SC).toString());
@@ -307,14 +329,14 @@ public class HttpRequestWorker implements Runnable {
             try {
                 clientRequest.respond(outboundResponse);
             } catch (ServerConnectorException e) {
-                LOGGER.error("Error occurred while submitting the Ack to the client", e);
+                LOG.error("Error occurred while submitting the Ack to the client", e);
             }
 
             try (OutputStream outputStream =
                          RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
                 outputStream.write(new byte[0]);
             } catch (IOException e) {
-                LOGGER.error("Error occurred while writing the Ack to the client", e);
+                LOG.error("Error occurred while writing the Ack to the client", e);
             }
         }
     }
@@ -322,10 +344,10 @@ public class HttpRequestWorker implements Runnable {
     private void handleException(String msg, Exception e) {
 
         if (Objects.isNull(e)) {
-            LOGGER.error(msg);
+            LOG.error(msg);
             e = new Exception(msg);
         } else {
-            LOGGER.error(msg, e);
+            LOG.error(msg, e);
         }
 
         try {
@@ -342,8 +364,8 @@ public class HttpRequestWorker implements Runnable {
             outboundResponse.setHeader(HTTP.CONTENT_TYPE, "text/html");
             outboundResponse.setHttpStatusCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
 
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
                         + ", for MessageID : " + msgContext.getMessageID());
             }
             try {
@@ -357,10 +379,10 @@ public class HttpRequestWorker implements Runnable {
                              RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
                     outputStream.write(body.getBytes());
                 } catch (IOException ioException) {
-                    LOGGER.error("Error occurred while writing the response body to the client", ioException);
+                    LOG.error("Error occurred while writing the response body to the client", ioException);
                 }
             } catch (ServerConnectorException serverConnectorException) {
-                LOGGER.error("Error occurred while submitting the response to the client");
+                LOG.error("Error occurred while submitting the response to the client");
             }
 
 

@@ -7,6 +7,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAccessor;
 
+/**
+ * A utility class for HTTP caching related tasks.
+ */
 public class CacheUtils {
 
     public static final String WEAK_VALIDATOR_TAG = "W/";

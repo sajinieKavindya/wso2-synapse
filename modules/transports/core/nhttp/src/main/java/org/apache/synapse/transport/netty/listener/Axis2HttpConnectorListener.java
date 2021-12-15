@@ -19,7 +19,8 @@
 package org.apache.synapse.transport.netty.listener;
 
 import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.wso2.transport.http.netty.contract.HttpConnectorListener;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
@@ -31,7 +32,7 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
  */
 public class Axis2HttpConnectorListener implements HttpConnectorListener {
 
-    private static final Logger LOGGER = Logger.getLogger(Axis2HttpConnectorListener.class);
+    private static final Log LOG = LogFactory.getLog(Axis2HttpConnectorListener.class);
 
     private final SourceConfiguration sourceConfiguration;
 
@@ -42,8 +43,8 @@ public class Axis2HttpConnectorListener implements HttpConnectorListener {
 
     public void onMessage(HttpCarbonMessage httpCarbonMessage) {
 
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Message received to HTTP transport, submitting a worker to the pool to process the request.");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Message received to HTTP transport, submitting a worker to the pool to process the request.");
         }
         WorkerPool workerPool = sourceConfiguration.getWorkerPool();
         workerPool.execute(new HttpRequestWorker(httpCarbonMessage, sourceConfiguration));
@@ -51,7 +52,7 @@ public class Axis2HttpConnectorListener implements HttpConnectorListener {
 
     public void onError(Throwable throwable) {
 
-        LOGGER.error("Error in HTTP server connector:", throwable);
+        LOG.error("Error in HTTP server connector:", throwable);
     }
 
 }

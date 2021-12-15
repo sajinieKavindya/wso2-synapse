@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -22,20 +22,18 @@ import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
-import org.apache.axis2.description.TransportOutDescription;
 import org.apache.axis2.transport.TransportListener;
-import org.apache.axis2.transport.TransportSender;
-import org.apache.axis2.transport.base.threads.WorkerPoolFactory;
-import org.apache.log4j.Logger;
-import org.apache.synapse.commons.handlers.MessagingHandler;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.api.config.HttpWebSocketInboundEndpointConfiguration;
 import org.apache.synapse.transport.netty.api.config.SSLConfiguration;
-import org.apache.synapse.transport.netty.api.config.WorkerPoolConfiguration;
 import org.apache.synapse.transport.netty.listener.Axis2HttpSSLTransportListener;
 import org.apache.synapse.transport.netty.listener.Axis2HttpTransportListener;
-import org.apache.synapse.transport.netty.sender.Axis2HttpTransportSender;
 
-import java.util.List;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.util.HashMap;
 import java.util.Objects;
 
 /**
@@ -43,135 +41,108 @@ import java.util.Objects;
  */
 public class HttpWebSocketInboundEndpointHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(HttpWebSocketInboundEndpointHandler.class);
+    private static final Log LOG = LogFactory.getLog(HttpWebSocketInboundEndpointHandler.class);
+
+    private static HashMap<Integer, TransportListener> transportListenerMap = new HashMap<>();
 
     /**
-     * Start Endpoint Listen and events related to Endpoint handle by  given NHttpServerEventHandler.
-     *
-     * @param configurationContext Event Handler for handle events for Endpoint
-     * @param httpWebSocketInboundEndpointConfiguration Event Handler for handle events for Endpoint
-     * @return Is Endpoint started successfully
+     * Default value for verification timeout to validate whether port is closed successfully.
      */
-    public static boolean startEndpoint(ConfigurationContext configurationContext,
-                                        HttpWebSocketInboundEndpointConfiguration
-                                                httpWebSocketInboundEndpointConfiguration) {
+    private static final int DEFAULT_PORT_CLOSE_VERIFY_TIMEOUT = 10;
+
+    /**
+     * Start Endpoint Listener.
+     *
+     * @param configurationContext configuration context
+     * @param httpWebSocketConfig  configuration that represents http and websocket inbound endpoint
+     * @return whether the Endpoint started successfully or not
+     */
+    public static boolean startListener(ConfigurationContext configurationContext,
+                                        HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig) {
 
         // prepare Axis2HttpTransportListener
         Axis2HttpTransportListener transportListener = new Axis2HttpTransportListener();
-        setWorkerPoolConfig(transportListener, httpWebSocketInboundEndpointConfiguration.getWorkerPoolConfiguration());
 
-        List<MessagingHandler> inboundEndpointHandlers =
-                httpWebSocketInboundEndpointConfiguration.getInboundEndpointHandlers();
-        if (Objects.nonNull(inboundEndpointHandlers)) {
-            transportListener.setMessagingHandlers(inboundEndpointHandlers);
-        }
-
-        // prepare Axis2HttpTransportSender
-        TransportSender transportSender = new Axis2HttpTransportSender(inboundEndpointHandlers);
-
-        return startServer(httpWebSocketInboundEndpointConfiguration.getPort(),
-                "http", transportListener, transportSender, null,
-                configurationContext, httpWebSocketInboundEndpointConfiguration.getEndpointName());
+        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTP, httpWebSocketConfig, configurationContext);
     }
 
     /**
-     * Close ListeningEndpoint running on the given port.
+     * Start SSL Endpoint Listener.
      *
-     * @param port Port of  ListeningEndpoint to be closed
-     * @return IS successfully closed
+     * @param configurationContext configuration context
+     * @param httpWebSocketConfig  configuration that represents http and websocket inbound endpoint
+     * @return whether the Endpoint started successfully or not
      */
-    public static boolean closeEndpoint(int port) {
-        return true;
+    public static boolean startSSLListener(ConfigurationContext configurationContext,
+                                           HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig) {
+
+        Axis2HttpTransportListener transportListener = new Axis2HttpSSLTransportListener();
+
+        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTPS, httpWebSocketConfig, configurationContext);
     }
 
-    /**
-     * Start SSL Endpoint Listen and events related to Endpoint handle by  given NHttpServerEventHandler.
-     *
-     * @return Started or Not
-     */
-    public static boolean startSSLEndpoint(ConfigurationContext configurationContext,
-                                           HttpWebSocketInboundEndpointConfiguration
-                                                   httpWebSocketInboundEndpointConfiguration) {
-        // prepare Axis2HttpSSLTransportListener
-        Axis2HttpSSLTransportListener transportListener = new Axis2HttpSSLTransportListener();
-        setWorkerPoolConfig(transportListener, httpWebSocketInboundEndpointConfiguration.getWorkerPoolConfiguration());
+    private static boolean startServer(Axis2HttpTransportListener transportListener, String transportName,
+                                       HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig,
+                                       ConfigurationContext configurationContext) {
 
-        List<MessagingHandler> inboundEndpointHandlers =
-                httpWebSocketInboundEndpointConfiguration.getInboundEndpointHandlers();
-        if (Objects.nonNull(inboundEndpointHandlers)) {
-            transportListener.setMessagingHandlers(inboundEndpointHandlers);
-        }
-
-        // prepare Axis2HttpTransportSender
-        TransportSender transportSender = new Axis2HttpTransportSender(inboundEndpointHandlers);
-
-        return startServer(httpWebSocketInboundEndpointConfiguration.getPort(),
-                "https", transportListener, transportSender,
-                httpWebSocketInboundEndpointConfiguration.getSslConfiguration(), configurationContext,
-                httpWebSocketInboundEndpointConfiguration.getEndpointName());
-    }
-
-    private static boolean startServer(int port, String transportName, TransportListener transportListener,
-                                       TransportSender transportSender, SSLConfiguration sslConfiguration,
-                                       ConfigurationContext configurationContext, String endpointName) {
+        int port = httpWebSocketConfig.getPort();
+        String endpointName = httpWebSocketConfig.getEndpointName();
 
         TransportInDescription transportInDescription;
         try {
-            transportInDescription = generateTransportInDescription(port, transportName,
-                    transportListener, sslConfiguration);
+            transportInDescription = generateTransportInDescription(transportName, transportListener,
+                    httpWebSocketConfig);
         } catch (AxisFault e) {
-            LOGGER.error("Error occurred while generating TransportInDescription. Hence, unable to"
-                    + " start the " + transportName + " transport listener for endpoint : "
-                    + endpointName + " on port " + port, e);
+            LOG.error("Error occurred while generating TransportInDescription. Hence, couldn't"
+                    + " start the " + transportName + " transport listener for endpoint : " + endpointName
+                    + " on port " + port, e);
             return false;
         }
 
-        TransportOutDescription transportOutDescription = new TransportOutDescription(transportName);
-        transportOutDescription.setSender(transportSender);
-
         try {
             configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
-            configurationContext.getAxisConfiguration().addTransportOut(transportOutDescription);
-
             transportListener.init(configurationContext, transportInDescription);
+            transportListener.setMessagingHandlers(httpWebSocketConfig.getInboundEndpointHandlers());
         } catch (AxisFault e) {
-            LOGGER.error("Couldn't initialize the " + transportInDescription.getName()
-                    + " transport listener for endpoint : " + endpointName + " on port "
-                    + port, e);
+            LOG.error("Couldn't initialize the " + transportName + " transport listener for endpoint : "
+                    + endpointName + " on port " + port, e);
             return false;
         }
 
         try {
             transportListener.start();
+            transportListenerMap.put(port, transportListener);
         } catch (AxisFault e) {
-            LOGGER.error("Couldn't start the " + transportInDescription.getName()
-                    + " transport listener for endpoint : " + endpointName + " on port "
-                    + port, e);
+            LOG.error("Couldn't start the " + transportName + " transport listener for endpoint : "
+                    + endpointName + " on port " + port, e);
             return false;
         }
         return true;
     }
 
-    private static TransportInDescription generateTransportInDescription(int port, String transportName,
+    private static TransportInDescription generateTransportInDescription(String transportName,
                                                                          TransportListener transportListener,
-                                                                         SSLConfiguration sslConfiguration)
+                                                                         HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig)
             throws AxisFault {
+
         TransportInDescription transportInDescription = new TransportInDescription(transportName);
         transportInDescription.setReceiver(transportListener);
-        Parameter parameter = new Parameter();
-        parameter.setName(TransportListener.PARAM_PORT);
-        parameter.setValue(port);
-        transportInDescription.addParameter(parameter);
 
+        // populate parameters
+        addParameter(transportInDescription, TransportListener.PARAM_PORT, httpWebSocketConfig.getPort());
+        addParameter(transportInDescription, "protocolVersion", httpWebSocketConfig.getHttpProtocolVersion());
+
+        SSLConfiguration sslConfiguration = httpWebSocketConfig.getSslConfiguration();
         if (Objects.nonNull(sslConfiguration)) {
-            injectSSLParameters(sslConfiguration, transportInDescription);
+            populateSSLParameters(sslConfiguration, transportInDescription);
         }
 
         return transportInDescription;
     }
 
-    private static void injectSSLParameters(SSLConfiguration sslConfiguration,
-                                            TransportInDescription transportInDescription) throws AxisFault {
+    private static void populateSSLParameters(SSLConfiguration sslConfiguration,
+                                              TransportInDescription transportInDescription) throws AxisFault {
+
         addParameter(transportInDescription, sslConfiguration.getKeyStoreElement());
         addParameter(transportInDescription, sslConfiguration.getTrustStoreElement());
         addParameter(transportInDescription, sslConfiguration.getClientAuthElement());
@@ -183,21 +154,79 @@ public class HttpWebSocketInboundEndpointHandler {
 
     private static void addParameter(TransportInDescription transportInDescription, OMElement parameterElement)
             throws AxisFault {
+
         Parameter parameter = new Parameter();
         parameter.setParameterElement(parameterElement);
         transportInDescription.addParameter(parameter);
     }
 
-    private static void setWorkerPoolConfig(Axis2HttpTransportListener transportListener,
-                                            WorkerPoolConfiguration workerPoolConfiguration) {
-        if (Objects.nonNull(workerPoolConfiguration)) {
-            transportListener.setWorkerPool(WorkerPoolFactory.getWorkerPool(
-                    workerPoolConfiguration.getWorkerPoolCoreSize(),
-                    workerPoolConfiguration.getWorkerPoolSizeMax(),
-                    workerPoolConfiguration.getWorkerPoolThreadKeepAliveSec(),
-                    workerPoolConfiguration.getWorkerPoolQueueLength(),
-                    workerPoolConfiguration.getThreadGroupID(),
-                    workerPoolConfiguration.getThreadID()));
-        }
+    private static void addParameter(TransportInDescription transportInDescription, String name, Object value)
+            throws AxisFault {
+
+        Parameter parameter = new Parameter();
+        parameter.setName(name);
+        parameter.setValue(value);
+        transportInDescription.addParameter(parameter);
     }
+
+    /**
+     * Close ListeningEndpoint running on the given port.
+     *
+     * @param port Port of  ListeningEndpoint to be closed
+     * @return IS successfully closed
+     */
+    public static boolean closeEndpoint(int port) {
+
+        LOG.info("Closing Endpoint Listener for port " + port);
+        TransportListener listener = transportListenerMap.get(port);
+        if (Objects.nonNull(listener)) {
+            try {
+                listener.stop();
+            } catch (AxisFault e) {
+                LOG.error("Cannot close Endpoint relevant to port " + port, e);
+                return false;
+            } finally {
+                int portCloseVerifyTimeout = DEFAULT_PORT_CLOSE_VERIFY_TIMEOUT;
+                if (isPortCloseSuccess(port, portCloseVerifyTimeout)) {
+                    LOG.info("Successfully closed Endpoint Listener for port " + port);
+                } else {
+                    LOG.warn("Port close verify timeout " + portCloseVerifyTimeout + "s exceeded. "
+                            + "Endpoint Listener for port " + port + " still bound to the ListenerEndpoint.");
+                }
+            }
+        }
+        return true;
+    }
+
+    private static boolean isPortCloseSuccess(int port, int portCloseVerifyTimeout) {
+
+        boolean portCloseSuccess = false;
+
+        for (int i = 0; i < portCloseVerifyTimeout; i++) {
+            try {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Verify port [" + port + "] close status. Attempt: " + i);
+                }
+
+                ServerSocket ss = new ServerSocket(port);
+                ss.close();
+                ss = null;
+                portCloseSuccess = true;
+                break;
+            } catch (IOException e) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("The port " + port + " is not closed yet, verify again after waiting 1s", e);
+                }
+
+                try {
+                    Thread.sleep(1000L);
+                } catch (InterruptedException ex) {
+                    //ignore
+                }
+            }
+        }
+
+        return portCloseSuccess;
+    }
+
 }

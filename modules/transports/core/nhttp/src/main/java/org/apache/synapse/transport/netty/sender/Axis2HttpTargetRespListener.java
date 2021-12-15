@@ -20,28 +20,28 @@ package org.apache.synapse.transport.netty.sender;
 
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.passthru.ErrorCodes;
-import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.wso2.transport.http.netty.contract.HttpConnectorListener;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 /**
- * {@code ResponseListener} listens for the response expected for the sent request.
+ * {@code Axis2HttpTargetRespListener} listens for the response expected for the sent request.
  */
-public class Axis2HttpInboundRespListener implements HttpConnectorListener {
+public class Axis2HttpTargetRespListener implements HttpConnectorListener {
 
-    private static final Logger LOG = Logger.getLogger(Axis2HttpInboundRespListener.class);
+    private static final Log LOG = LogFactory.getLog(Axis2HttpTargetRespListener.class);
 
     private final MessageContext requestMsgCtx;
     private final WorkerPool workerPool;
     private final TargetConfiguration targetConfiguration;
     private final TargetErrorHandler errorHandler;
 
-    public Axis2HttpInboundRespListener(WorkerPool workerPool, MessageContext requestMsgContext,
-                                        TargetConfiguration targetConfiguration) {
+    public Axis2HttpTargetRespListener(WorkerPool workerPool, MessageContext requestMsgContext,
+                                       TargetConfiguration targetConfiguration) {
         this.workerPool = workerPool;
         this.requestMsgCtx = requestMsgContext;
         this.targetConfiguration = targetConfiguration;
@@ -56,11 +56,11 @@ public class Axis2HttpInboundRespListener implements HttpConnectorListener {
 
     @Override
     public void onError(Throwable throwable) {
-        LOG.error(BridgeConstants.BRIDGE_LOG_PREFIX + "Error while sending the request or "
-                + "processing the response", throwable);
+        LOG.error("Error while sending the request to the backend service or "
+                + "processing the response from backend service", throwable);
         if (requestMsgCtx != null) {
-            requestMsgCtx.setProperty(PassThroughConstants.INTERNAL_EXCEPTION_ORIGIN,
-                    PassThroughConstants.INTERNAL_ORIGIN_ERROR_HANDLER);
+            requestMsgCtx.setProperty(BridgeConstants.INTERNAL_EXCEPTION_ORIGIN,
+                    BridgeConstants.INTERNAL_ORIGIN_ERROR_HANDLER);
             errorHandler.handleError(requestMsgCtx, ErrorCodes.SND_IO_ERROR, "Error in Sender", throwable);
         }
     }

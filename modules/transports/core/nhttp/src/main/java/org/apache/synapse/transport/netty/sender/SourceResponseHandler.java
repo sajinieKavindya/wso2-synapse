@@ -18,8 +18,10 @@
  */
 package org.apache.synapse.transport.netty.sender;
 
+import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.Constants;
@@ -28,7 +30,8 @@ import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageProcessorSelector;
 import org.apache.http.HttpStatus;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.apache.synapse.transport.netty.util.CacheUtils;
@@ -39,7 +42,6 @@ import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
 import org.wso2.caching.CachingConstants;
 import org.wso2.transport.http.netty.contract.config.ChunkConfig;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
-import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -52,7 +54,7 @@ import javax.xml.stream.XMLStreamException;
  */
 public class SourceResponseHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(SourceResponseHandler.class);
+    private static final Log LOG = LogFactory.getLog(SourceResponseHandler.class);
 
     /**
      * Creates outbound response to be sent back to the HTTP client using the axis2 message context and
@@ -66,11 +68,15 @@ public class SourceResponseHandler {
     public static HttpCarbonMessage createOutboundResponseMsg(MessageContext msgCtx, HttpCarbonMessage clientRequest)
             throws AxisFault {
 
-        HttpCarbonMessage outboundResponseMsg = HttpUtils.createHttpCarbonMessage(false);
+        HttpCarbonMessage outboundResponseMsg = new HttpCarbonMessage(
+                new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
         try {
             handleMTOM(msgCtx);
-            prepareOutboundResponse(clientRequest, outboundResponseMsg, msgCtx);
             handleETAGCaching(clientRequest, outboundResponseMsg, msgCtx);
+            if (isValidCacheResponse(msgCtx)) {
+                return outboundResponseMsg;
+            }
+            prepareOutboundResponse(clientRequest, outboundResponseMsg, msgCtx);
         } catch (AxisFault e) {
             RequestResponseUtils.handleException("Error while creating the outbound response!", e);
         }
@@ -79,8 +85,7 @@ public class SourceResponseHandler {
 
     private static void handleMTOM(MessageContext msgCtx) throws AxisFault {
 
-        if (msgCtx.getProperty(org.apache.axis2.Constants.Configuration.ENABLE_MTOM) != null
-                && !msgCtx.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED)) {
+        if (isMTOMEnabled(msgCtx)) {
             try {
                 MessageUtils.buildMessage(msgCtx);
             } catch (IOException e) {
@@ -91,44 +96,15 @@ public class SourceResponseHandler {
         }
     }
 
-    /**
-     * Set headers and properties to the outbound transport message.
-     *
-     * @param outboundResponseMsg transport Http carbon message.
-     */
     private static void prepareOutboundResponse(HttpCarbonMessage inboundRequestMsg,
                                                 HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
 
-        SourceConfiguration sourceConfiguration = (SourceConfiguration) msgContext.getProperty(
-                BridgeConstants.HTTP_SOURCE_CONFIGURATION);
-        HttpUtils.removeUnwantedHeadersFromInternalTransportHeadersMap(msgContext, sourceConfiguration);
-        enrichOutboundMessage(inboundRequestMsg, outboundResponseMsg, msgContext);
+        setOutboundResponseProperties(outboundResponseMsg, msgContext);
+        setOutboundResponseHeaders(inboundRequestMsg, outboundResponseMsg, msgContext);
     }
 
-    /**
-     * Set headers and properties of request/response object to the outbound transport message.
-     *
-     * @param inboundRequestMsg   inbound transport Http carbon message.
-     * @param outboundResponseMsg outbound transport Http carbon message.
-     * @param msgContext          axis2 message context
-     */
-    public static void enrichOutboundMessage(HttpCarbonMessage inboundRequestMsg,
-                                             HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
-
-        setPropertiesToTransportMessage(outboundResponseMsg, msgContext);
-        setHeadersToTransportMessage(inboundRequestMsg, outboundResponseMsg, msgContext);
-    }
-
-    private static void setHeadersToTransportMessage(HttpCarbonMessage inboundRequestMsg,
-                                                     HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
-
-        HttpUtils.addTransportHeadersToTransportMessage(outboundResponseMsg.getHeaders(), msgContext);
-        setChunkingHeader(inboundRequestMsg, outboundResponseMsg, msgContext);
-        setContentTypeHeader(outboundResponseMsg, msgContext);
-    }
-
-    private static void setPropertiesToTransportMessage(HttpCarbonMessage outboundResponseMsg,
-                                                        MessageContext msgContext) {
+    private static void setOutboundResponseProperties(HttpCarbonMessage outboundResponseMsg,
+                                                      MessageContext msgContext) {
 
         setHttpVersion(outboundResponseMsg, msgContext);
 
@@ -136,6 +112,16 @@ public class SourceResponseHandler {
         outboundResponseMsg.setHttpStatusCode(statusCode);
 
         setReasonPhrase(outboundResponseMsg, msgContext, statusCode);
+    }
+
+    private static void setOutboundResponseHeaders(HttpCarbonMessage inboundRequestMsg,
+                                                   HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
+
+        HttpUtils.removeUnwantedHeadersFromInternalTransportHeadersMap(msgContext,
+                (SourceConfiguration) msgContext.getProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION));
+        HttpUtils.addTransportHeadersToTransportMessage(outboundResponseMsg.getHeaders(), msgContext);
+        setChunkingHeader(inboundRequestMsg, outboundResponseMsg, msgContext);
+        setContentTypeHeader(outboundResponseMsg, msgContext);
     }
 
     private static void setContentTypeHeader(HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
@@ -150,7 +136,7 @@ public class SourceResponseHandler {
                 String contentType = getContentTypeForOutboundResponse(msgContext);
                 outboundResponseMsg.setHeader(Constants.Configuration.CONTENT_TYPE, contentType);
             } catch (AxisFault axisFault) {
-                LOGGER.error("Error occurred while setting the Content-Type header. Hence, not overwriting the "
+                LOG.error("Error occurred while setting the Content-Type header. Hence, not overwriting the "
                         + "outbound response Content-Type Header");
             }
         }
@@ -338,7 +324,7 @@ public class SourceResponseHandler {
                     httpStatus = Integer.parseInt(statusCode.toString());
                     return httpStatus;
                 } catch (NumberFormatException e) {
-                    LOGGER.warn("Unable to set the HTTP status code from the property "
+                    LOG.warn("Unable to set the HTTP status code from the property "
                             + BridgeConstants.HTTP_SC + " with value: " + statusCode);
                 }
             }
@@ -392,8 +378,7 @@ public class SourceResponseHandler {
     private static void handleETAGCaching(HttpCarbonMessage inboundRequestMsg, HttpCarbonMessage outboundResponseMsg,
                                           MessageContext msgCtx) throws AxisFault {
 
-        if (msgCtx.isPropertyTrue(BridgeConstants.HTTP_ETAG_ENABLED)
-                && !msgCtx.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED)) {
+        if (isEtagEnabled(msgCtx)) {
             try {
                 MessageUtils.buildMessage(msgCtx);
             } catch (IOException e) {
@@ -413,43 +398,61 @@ public class SourceResponseHandler {
             outboundResponseMsg.setHttpStatusCode(HttpResponseStatus.NOT_MODIFIED.code());
             outboundResponseMsg.setProperty(org.wso2.transport.http.netty.contract.Constants.HTTP_REASON_PHRASE,
                     HttpResponseStatus.NOT_MODIFIED.reasonPhrase());
+            setHttpVersion(outboundResponseMsg, msgCtx);
             outboundResponseMsg.removeHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
             outboundResponseMsg.removeHeader(HttpHeaderNames.CONTENT_TYPE.toString());
-            outboundResponseMsg.waitAndReleaseAllEntities();
-            outboundResponseMsg.completeMessage();
             msgCtx.setProperty(BridgeConstants.VALID_CACHED_RESPONSE, true);
         }
     }
 
-    public static void sendResponse(MessageContext msgCtx, HttpCarbonMessage requestMsg,
-                                    HttpCarbonMessage responseMsg) throws AxisFault {
+    /**
+     * Writes the response headers and the response body to the client.
+     *
+     * @param msgCtx              axis2 message context
+     * @param inboundRequestMsg   inbound request carbon message
+     * @param outboundResponseMsg outbound response carbon message
+     * @throws AxisFault if something goes wrong when sending out the response
+     */
+    public static void sendResponse(MessageContext msgCtx, HttpCarbonMessage inboundRequestMsg,
+                                    HttpCarbonMessage outboundResponseMsg) throws AxisFault {
 
-        HttpUtils.sendOutboundResponse(requestMsg, responseMsg);
-        if (!msgCtx.isPropertyTrue(BridgeConstants.VALID_CACHED_RESPONSE)) {
-            serializeData(msgCtx, responseMsg);
-        }
+        HttpUtils.sendOutboundResponse(inboundRequestMsg, outboundResponseMsg);
+        serializeData(msgCtx, outboundResponseMsg);
     }
 
     private static void serializeData(MessageContext msgCtx, HttpCarbonMessage responseMsg)
             throws AxisFault {
 
-        HttpMessageDataStreamer outboundMsgDataStreamer = HttpUtils.getResponseDataStreamer(responseMsg);
-
-        if (msgCtx.isPropertyTrue(BridgeConstants.NO_ENTITY_BODY)) {
-            OutputStream messageOutputStream = outboundMsgDataStreamer.getOutputStream();
-            HttpUtils.serializeBytes(messageOutputStream, new byte[0]);
-            HttpUtils.closeMessageOutputStream(messageOutputStream);
+        if (hasNoResponseBodyToSend(msgCtx)) {
+            responseMsg.waitAndReleaseAllEntities();
+            responseMsg.completeMessage();
         } else {
             if (RequestResponseUtils.shouldInvokeFormatterToWriteBody(msgCtx)) {
-                OutputStream messageOutputStream = outboundMsgDataStreamer.getOutputStream();
+                OutputStream messageOutputStream = HttpUtils.getResponseDataStreamer(responseMsg).getOutputStream();
                 MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
                 HttpUtils.serializeDataUsingMessageFormatter(msgCtx, messageFormatter, messageOutputStream);
-                RequestResponseUtils.closeMessageOutputStream(messageOutputStream);
             } else {
                 HttpCarbonMessage inboundCarbonMessage =
                         (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-                HttpUtils.serializeDataFromInboundHttpCarbonMessage(inboundCarbonMessage, responseMsg);
+                HttpUtils.copyContentFromInboundHttpCarbonMessage(inboundCarbonMessage, responseMsg);
             }
         }
+    }
+
+    private static boolean hasNoResponseBodyToSend(MessageContext msgCtx) {
+        return msgCtx.isPropertyTrue(BridgeConstants.NO_ENTITY_BODY)
+                || msgCtx.isPropertyTrue(BridgeConstants.VALID_CACHED_RESPONSE);
+    }
+
+    private static boolean isEtagEnabled(MessageContext msgCtx) {
+        return msgCtx.isPropertyTrue(BridgeConstants.HTTP_ETAG_ENABLED);
+    }
+
+    private static boolean isMTOMEnabled(MessageContext msgCtx) {
+        return Objects.nonNull(msgCtx.getProperty(org.apache.axis2.Constants.Configuration.ENABLE_MTOM));
+    }
+
+    private static boolean isValidCacheResponse(MessageContext msgCtx) {
+        return msgCtx.isPropertyTrue(BridgeConstants.VALID_CACHED_RESPONSE);
     }
 }

@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -26,7 +26,8 @@ import org.apache.axis2.context.SessionContext;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.http.conn.Scheme;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
@@ -46,9 +47,10 @@ import java.util.List;
  */
 public class Axis2HttpTransportListener implements TransportListener {
 
-    private static final Logger LOG = Logger.getLogger(Axis2HttpTransportListener.class);
+    private static final Log LOG = LogFactory.getLog(Axis2HttpTransportListener.class);
 
     private ServerConnector serverConnector;
+    private HttpWsConnectorFactory httpWsConnectorFactory;
     private WorkerPool workerPool;
     protected SourceConfiguration sourceConfiguration = null;
     protected List<MessagingHandler> messagingHandlers;
@@ -68,16 +70,15 @@ public class Axis2HttpTransportListener implements TransportListener {
 
         ListenerConfiguration listenerConfiguration = initListenerConfiguration();
 
-        HttpWsConnectorFactory httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
+        httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
         this.serverConnector = httpWsConnectorFactory
                 .createServerConnector(new ServerBootstrapConfiguration(new HashMap<>()), listenerConfiguration);
     }
 
     @Override
-    public void start() {
+    public void start() throws AxisFault {
         ServerConnectorFuture serverConnectorFuture = serverConnector.start();
-        serverConnectorFuture.setHttpConnectorListener(
-                new Axis2HttpConnectorListener(sourceConfiguration));
+        serverConnectorFuture.setHttpConnectorListener(new Axis2HttpConnectorListener(sourceConfiguration));
         serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
         try {
             serverConnectorFuture.sync();
@@ -87,9 +88,14 @@ public class Axis2HttpTransportListener implements TransportListener {
     }
 
     @Override
-    public void stop() {
+    public void stop() throws AxisFault {
         LOG.info("Stopping " + transportInDescription.getName() + " Listener..");
         serverConnector.stop();
+        try {
+            httpWsConnectorFactory.shutdown();
+        } catch (InterruptedException e) {
+            LOG.error("Error occurred while shutting down the listener..", e);
+        }
     }
 
     @Override

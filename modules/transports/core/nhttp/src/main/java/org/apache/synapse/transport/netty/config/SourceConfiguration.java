@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -25,7 +25,8 @@ import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.base.ParamUtils;
 import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.http.conn.Scheme;
 import org.apache.synapse.transport.netty.BridgeConstants;
@@ -39,7 +40,7 @@ import java.util.List;
  */
 public class SourceConfiguration extends BaseConfiguration {
 
-    private static final Logger LOGGER = Logger.getLogger(SourceConfiguration.class);
+    private static final Log LOG = LogFactory.getLog(SourceConfiguration.class);
 
     private int port;
     private String host;
@@ -70,39 +71,57 @@ public class SourceConfiguration extends BaseConfiguration {
     public void build() throws AxisFault {
 
         super.build();
+
+        populatePort();
+
+        populateHostname();
+
+        populateHTTPProtocol();
+
+        populateHTTPGETRequestProcessor();
+
+        populatePreserveHTTPHeaders(conf.getResponsePreserveHttpHeaders());
+    }
+
+    private void populatePort() throws AxisFault {
         port = ParamUtils.getRequiredParamInt(inDescription, TransportListener.PARAM_PORT);
         if (port == 0) {
             throw new AxisFault("Listener port is not defined!");
         }
+    }
 
-        // TODO: make this configurable in the netty.props
+    private void populateHostname() {
         Parameter hostParameter = inDescription.getParameter(TransportListener.HOST_ADDRESS);
         if (hostParameter != null) {
             host = ((String) hostParameter.getValue()).trim();
+        } else if (conf.getListenerHostname() != null) {
+            host = conf.getListenerHostname().trim();
         } else {
             try {
                 host = java.net.InetAddress.getLocalHost().getHostName();
             } catch (UnknownHostException e) {
-                LOGGER.warn("Unable to lookup local host name. Hence, using 'localhost'");
+                LOG.warn("Unable to lookup local host name. Hence, using 'localhost'");
                 host = BridgeConstants.HTTP_DEFAULT_HOST;
             }
         }
+    }
 
-        Parameter protocolParameter = inDescription.getParameter("PROTOCOL");
+    private void populateHTTPProtocol() {
+        Parameter protocolParameter = inDescription.getParameter("protocolVersion");
         if (protocolParameter != null) {
             String protocol = ((String) protocolParameter.getValue()).trim();
             if (!protocol.isEmpty()) {
                 this.protocol = protocol;
             }
         }
+    }
 
+    private void populateHTTPGETRequestProcessor() throws AxisFault {
         String httpGetRequestProcessorClass = conf.getHttpGetRequestProcessorClass();
         httpGetRequestProcessor = createHttpGetProcessor(httpGetRequestProcessorClass);
         if (httpGetRequestProcessor == null) {
             handleException("Cannot create HttpGetRequestProcessor");
         }
-
-        populatePreserveHTTPHeaders(conf.getResponsePreserveHttpHeaders());
     }
 
     private HttpGetRequestProcessor createHttpGetProcessor(String clss) throws AxisFault {
@@ -112,13 +131,13 @@ public class SourceConfiguration extends BaseConfiguration {
             obj = Class.forName(clss).newInstance();
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
             // TODO: change to a proper error log
-            handleException("Error creating WSDL processor", e);
+            handleException("Error creating HTTP GET Request processor", e);
         }
 
         if (obj instanceof HttpGetRequestProcessor) {
             return (HttpGetRequestProcessor) obj;
         } else {
-            handleException("Error creating WSDL processor. The http GET request processor should be of type "
+            handleException("Error creating HTTP GET Request processor. It should be of type "
                     + "org.apache.synapse.transport.passthru.HttpGetRequestProcessor");
         }
         return null;
@@ -126,13 +145,13 @@ public class SourceConfiguration extends BaseConfiguration {
 
     private void handleException(String msg, Exception e) throws AxisFault {
 
-        LOGGER.error(msg, e);
+        LOG.error(msg, e);
         throw new AxisFault(msg, e);
     }
 
     private void handleException(String msg) throws AxisFault {
 
-        LOGGER.error(msg);
+        LOG.error(msg);
         throw new AxisFault(msg);
     }
 

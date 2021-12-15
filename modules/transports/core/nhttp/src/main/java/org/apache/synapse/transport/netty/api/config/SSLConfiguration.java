@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -23,7 +23,8 @@ import org.apache.axiom.om.OMAbstractFactory;
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.OMFactory;
 import org.apache.axiom.om.util.AXIOMUtil;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 
 import javax.xml.stream.XMLStreamException;
@@ -33,7 +34,7 @@ import javax.xml.stream.XMLStreamException;
  */
 public class SSLConfiguration {
 
-    private static final Logger LOGGER = Logger.getLogger(SSLConfiguration.class);
+    private static final Log LOG = LogFactory.getLog(SSLConfiguration.class);
 
     private final String keyStore;
     private final String trustStore;
@@ -42,15 +43,6 @@ public class SSLConfiguration {
     private final String revocationVerifier;
     private final String sslProtocol;
     private final String preferredCiphersEl;
-
-    private OMElement keyStoreElement;
-    private OMElement trustStoreElement;
-    private OMElement clientAuthElement;
-    private OMElement revocationVerifierElement;
-    private OMElement httpsProtocolElement;
-    private OMElement sslProtocolElement;
-    private OMElement preferredCiphersElement;
-
 
     public SSLConfiguration(SSLConfigurationBuilder builder) {
         this.keyStore = builder.keyStore;
@@ -65,65 +57,64 @@ public class SSLConfiguration {
     public OMElement getKeyStoreElement() {
         if (keyStore != null) {
             try {
-                keyStoreElement = AXIOMUtil.stringToOM(keyStore);
+                return AXIOMUtil.stringToOM(keyStore);
             } catch (XMLStreamException e) {
-                LOGGER.error("Keystore may not be well formed XML", e);
+                LOG.error("Keystore may not be well formed XML", e);
             }
         }
-        return keyStoreElement;
+        return null;
     }
 
     public OMElement getClientAuthElement() {
-        if (clientAuthEl != null) {
-            OMFactory fac = OMAbstractFactory.getOMFactory();
-            clientAuthElement = fac.createOMElement("SSLVerifyClient", "", "");
-            clientAuthElement.setText(clientAuthEl);
+        if (clientAuthEl == null) {
+            return null;
         }
+        OMFactory fac = OMAbstractFactory.getOMFactory();
+        OMElement clientAuthElement = fac.createOMElement("SSLVerifyClient", "", "");
+        clientAuthElement.setText(clientAuthEl);
         return clientAuthElement;
     }
 
     public OMElement getTrustStoreElement() {
         if (trustStore != null) {
             try {
-                trustStoreElement = AXIOMUtil.stringToOM(trustStore);
+                return AXIOMUtil.stringToOM(trustStore);
             } catch (XMLStreamException e) {
-                LOGGER.error("TrustStore may not be well formed XML", e);
+                LOG.error("TrustStore may not be well formed XML", e);
             }
         }
-        return trustStoreElement;
+        return null;
     }
 
     public OMElement getRevocationVerifierElement() {
         if (revocationVerifier != null) {
             try {
-                revocationVerifierElement = AXIOMUtil.stringToOM(revocationVerifier);
+                return AXIOMUtil.stringToOM(revocationVerifier);
             } catch (XMLStreamException e) {
-                LOGGER.error("CertificateRevocationVerifier may not be well formed XML", e);
+                LOG.error("CertificateRevocationVerifier may not be well formed XML", e);
             }
         }
-        return revocationVerifierElement;
+        return null;
     }
 
     public OMElement getHttpsProtocolElement() {
-        if (httpsProtocolsEl != null) {
-            OMFactory fac = OMAbstractFactory.getOMFactory();
-            httpsProtocolElement = fac.createOMElement("HttpsProtocols", "", "");
-            httpsProtocolElement.setText(httpsProtocolsEl);
+        if (httpsProtocolsEl == null) {
+            return null;
         }
+        OMFactory fac = OMAbstractFactory.getOMFactory();
+        OMElement httpsProtocolElement = fac.createOMElement("HttpsProtocols", "", "");
+        httpsProtocolElement.setText(httpsProtocolsEl);
         return httpsProtocolElement;
     }
 
     public OMElement getSslProtocolElement() {
-        if (sslProtocol != null) {
-            OMFactory fac = OMAbstractFactory.getOMFactory();
-            sslProtocolElement = fac.createOMElement("SSLProtocol", "", "");
-            sslProtocolElement.setText(sslProtocol);
+        if (sslProtocol == null) {
+            return null;
         }
+        OMFactory fac = OMAbstractFactory.getOMFactory();
+        OMElement sslProtocolElement = fac.createOMElement("SSLProtocol", "", "");
+        sslProtocolElement.setText(sslProtocol);
         return sslProtocolElement;
-    }
-
-    public String getPreferredCiphersEl() {
-        return preferredCiphersEl;
     }
 
     /**
@@ -131,11 +122,12 @@ public class SSLConfiguration {
      * @return OMElement
      */
     public OMElement getPreferredCiphersElement() {
-        if (preferredCiphersEl != null) {
-            OMFactory fac = OMAbstractFactory.getOMFactory();
-            preferredCiphersElement = fac.createOMElement(NhttpConstants.PREFERRED_CIPHERS, "", "");
-            preferredCiphersElement.setText(preferredCiphersEl);
+        if (preferredCiphersEl == null) {
+            return null;
         }
+        OMFactory fac = OMAbstractFactory.getOMFactory();
+        OMElement preferredCiphersElement = fac.createOMElement(NhttpConstants.PREFERRED_CIPHERS, "", "");
+        preferredCiphersElement.setText(preferredCiphersEl);
         return preferredCiphersElement;
     }
 

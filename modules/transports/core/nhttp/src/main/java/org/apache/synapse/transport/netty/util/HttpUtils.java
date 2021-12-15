@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -18,37 +18,30 @@
  */
 package org.apache.synapse.transport.netty.util;
 
-import io.netty.handler.codec.http.DefaultHttpRequest;
-import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.LastHttpContent;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axis2.AxisFault;
-import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.http.HTTPConstants;
-import org.apache.http.HttpStatus;
 import org.apache.http.protocol.HTTP;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.BaseConfiguration;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
-import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.securevault.SecretResolver;
-import org.wso2.securevault.SecretResolverFactory;
+import org.wso2.securevault.commons.MiscellaneousUtil;
 import org.wso2.transport.http.netty.contract.HttpResponseFuture;
 import org.wso2.transport.http.netty.contract.config.ChunkConfig;
 import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
+import org.wso2.transport.http.netty.contract.config.Parameter;
 import org.wso2.transport.http.netty.contract.config.SslConfiguration;
 import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.ConnectionManager;
@@ -59,7 +52,9 @@ import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -68,7 +63,7 @@ import java.util.Objects;
  */
 public class HttpUtils {
 
-    private static final Logger LOGGER = Logger.getLogger(HttpUtils.class);
+    private static final Log LOG = LogFactory.getLog(HttpUtils.class);
 
     public static ConnectionManager getConnectionManager() {
 
@@ -85,30 +80,6 @@ public class HttpUtils {
         poolConfiguration.setMaxActivePerPool(globalConf.getConnectionPoolingMaxActiveConnections());
         poolConfiguration.setMaxIdlePerPool(globalConf.getConnectionPoolingMaxIdleConnections());
         poolConfiguration.setMaxWaitTime((long) globalConf.getConnectionPoolingWaitTime() * 1000);
-
-        // This only applies to HTTP/2.
-        int maxActiveStreamsPerConnection = globalConf.getConnectionPoolingMaxActiveStreamsPerConnection();
-        poolConfiguration.setHttp2MaxActiveStreamsPerConnection(
-                maxActiveStreamsPerConnection == -1 ? Integer.MAX_VALUE : maxActiveStreamsPerConnection);
-    }
-
-    /**
-     * Creates an HttpCarbonRequest or an HttpCarbonResponse based on the given flag.
-     *
-     * @param isRequest whether to create a HttpCarbonRequest or an HttpCarbonResponse
-     * @return an HttpCarbonRequest or an HttpCarbonResponse based on the given flag
-     */
-    public static HttpCarbonMessage createHttpCarbonMessage(boolean isRequest) {
-
-        HttpCarbonMessage httpCarbonMessage;
-        if (isRequest) {
-            httpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, ""));
-        } else {
-            httpCarbonMessage = new HttpCarbonMessage(
-                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK));
-        }
-        return httpCarbonMessage;
     }
 
     /**
@@ -116,7 +87,7 @@ public class HttpUtils {
      * should be dictated by the transport and not by the user. We remove these as these may get
      * copied from the request messages.
      *
-     * @param msgContext axis2 message context
+     * @param msgContext        axis2 message context
      * @param baseConfiguration configuration that has all the preserved header details
      */
     public static void removeUnwantedHeadersFromInternalTransportHeadersMap(MessageContext msgContext,
@@ -162,9 +133,7 @@ public class HttpUtils {
                     iter.remove();
                 }
 
-                if (HTTP.TARGET_HOST.equalsIgnoreCase(headerName)
-                        && !baseConfiguration.isPreserveHttpHeader(HTTP.TARGET_HOST)) {
-                    // TODO: can HOST header be a preservable header?
+                if (HTTP.TARGET_HOST.equalsIgnoreCase(headerName)) {
                     iter.remove();
                 }
             }
@@ -214,8 +183,7 @@ public class HttpUtils {
     }
 
     /**
-     * This method should never be called directly to send out responses for ballerina HTTP 1.1. Use
-     * PipeliningHandler's sendPipelinedResponse() method instead.
+     * Invokes {@code HttpResponseFuture} respond method to send the response back to the client.
      *
      * @param requestMsg  Represent the request message
      * @param responseMsg Represent the corresponding response
@@ -257,23 +225,25 @@ public class HttpUtils {
         try {
             outputStream.write(bytes);
         } catch (IOException e) {
-            throw new AxisFault("Error while writing the entity body to the http CarbonMessage");
+            RequestResponseUtils.handleException("Error occurred while serializing the message body.", e);
         }
     }
 
     public static void serializeDataUsingMessageFormatter(MessageContext msgContext, MessageFormatter messageFormatter,
-                                                          OutputStream outputStream) {
+                                                          OutputStream outputStream) throws AxisFault {
 
         OMOutputFormat format = MessageUtils.getOMOutputFormat(msgContext);
         try {
             messageFormatter.writeTo(msgContext, format, outputStream, false);
-        } catch (AxisFault axisFault) {
-            LOGGER.error(BridgeConstants.BRIDGE_LOG_PREFIX + axisFault.getMessage());
+        } catch (AxisFault e) {
+            RequestResponseUtils.handleException("Error occurred while serializing the message body.", e);
+        } finally {
+            HttpUtils.closeMessageOutputStreamQuietly(outputStream);
         }
     }
 
-    public static void serializeDataFromInboundHttpCarbonMessage(HttpCarbonMessage inboundMsg,
-                                                                 HttpCarbonMessage outboundResponseMsg) {
+    public static void copyContentFromInboundHttpCarbonMessage(HttpCarbonMessage inboundMsg,
+                                                               HttpCarbonMessage outboundResponseMsg) {
 
         do {
             HttpContent httpContent = inboundMsg.getHttpContent();
@@ -284,14 +254,16 @@ public class HttpUtils {
         } while (true);
     }
 
-    public static void closeMessageOutputStream(OutputStream messageOutputStream) {
+    public static void closeMessageOutputStreamQuietly(OutputStream messageOutputStream) {
 
         try {
             if (messageOutputStream != null) {
                 messageOutputStream.close();
             }
         } catch (IOException e) {
-            LOGGER.error("Couldn't close message output stream", e);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Couldn't close the message output stream: " + e.getMessage());
+            }
         }
     }
 
@@ -316,16 +288,26 @@ public class HttpUtils {
                 || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED);
     }
 
-    public static boolean isGetRequest(MessageContext msgCtx) {
+    public static boolean isGETRequest(MessageContext msgCtx) {
 
-        return BridgeConstants.HTTP_GET.equals(msgCtx.getProperty(BridgeConstants.HTTP_METHOD));
+        return BridgeConstants.HTTP_GET.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_METHOD).toString());
+    }
+
+    public static boolean isHEADRequest(MessageContext msgCtx) {
+
+        return BridgeConstants.HTTP_HEAD.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_METHOD).toString());
+    }
+
+    public static boolean isCONNECTRequest(MessageContext msgCtx) {
+
+        return BridgeConstants.HTTP_CONNECT.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_CONNECT)
+                .toString());
     }
 
     public static boolean isNoEntityBodyRequest(MessageContext msgCtx) {
 
-        if ((PassThroughConstants.HTTP_GET.equals(msgCtx.getProperty(BridgeConstants.HTTP_METHOD)))
-                || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
-            return false;
+        if (HttpUtils.isGETRequest(msgCtx) || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
+            return true;
         }
         return !hasEntityBody(msgCtx);
     }
@@ -335,7 +317,7 @@ public class HttpUtils {
         if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
             return true;
         }
-        return !Boolean.TRUE.equals(msgCtx.getProperty(NhttpConstants.NO_ENTITY_BODY));
+        return !msgCtx.isPropertyTrue(BridgeConstants.NO_ENTITY_BODY);
     }
 
     public static void addTransportHeadersToTransportMessage(HttpHeaders headers, MessageContext msgCtx) {
@@ -355,7 +337,7 @@ public class HttpUtils {
     public static void setHostHeader(String host, int port, HttpHeaders headers, MessageContext msgCtx,
                                      boolean isPreservedHeader) {
 
-        if (headers.contains(HttpHeaderNames.USER_AGENT) && isPreservedHeader) {
+        if (headers.contains(HttpHeaderNames.HOST) && isPreservedHeader) {
             return;
         }
         // If REQUEST_HOST_HEADER property is defined, the value of this property will be set as the
@@ -376,74 +358,166 @@ public class HttpUtils {
      * Populates SSL configuration instance with secure socket configuration.
      *
      * @param senderConfiguration SSL configuration instance.
-     * @param secureSocket        Secure socket configuration.
+     * @param targetConfiguration target configuration.
      */
-    public static void populateSSLConfiguration(SslConfiguration senderConfiguration) {
+    public static void populateSSLConfiguration(SslConfiguration senderConfiguration,
+                                                TargetConfiguration targetConfiguration) throws AxisFault {
 
-//        List<Parameter> clientParamList = new ArrayList<>();
-//        boolean enable = secureSocket.getBooleanValue(HttpConstants.SECURESOCKET_CONFIG_DISABLE_SSL);
-//        if (!enable) {
-//            senderConfiguration.disableSsl();
-//            BMap<BString, Object> key = getBMapValueIfPresent(secureSocket, HttpConstants.SECURESOCKET_CONFIG_KEY);
-//            if (key != null) {
-//                evaluateKeyField(key, senderConfiguration);
-//            }
-//            return;
-//        }
-//        Object cert = secureSocket.get(HttpConstants.SECURESOCKET_CONFIG_CERT);
-//        if (cert == null) {
-//            BMap<BString, Object> key = getBMapValueIfPresent(secureSocket, HttpConstants.SECURESOCKET_CONFIG_KEY);
-//            if (key != null) {
-//                senderConfiguration.useJavaDefaults();
-//            } else {
-//                throw createHttpError("Need to configure cert with client SSL certificates file",
-//                        HttpErrorType.SSL_ERROR);
-//            }
-//        } else {
-//            evaluateCertField(cert, senderConfiguration);
-//        }
-//
-//        SecretResolver secretResolver;
-//        ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
-//        if (configurationContext != null && configurationContext.getAxisConfiguration() != null) {
-//            secretResolver = configurationContext.getAxisConfiguration().getSecretResolver();
-//        } else {
-//            secretResolver = SecretResolverFactory.create(keyStoreEl, false);
-//        }
-//
-//        RequestResponseUtils.populateKeyStoreConfigs(key, senderConfiguration);
-//
-//        RequestResponseUtils.populateTrustStoreConfigs(cert, senderConfiguration);
-//
-//        RequestResponseUtils.evaluateProtocolField(protocol, senderConfiguration, clientParamList);
-//
-//        RequestResponseUtils.populateCertValidationConfigs(certValidation, senderConfiguration);
-//
-//        RequestResponseUtils.evaluateCiphersField(ciphers, clientParamList);
-//
-//        RequestResponseUtils.populateCommonConfigs(secureSocket, senderConfiguration, clientParamList);
-//
-//        BMap<BString, Object> key = getBMapValueIfPresent(secureSocket, HttpConstants.SECURESOCKET_CONFIG_KEY);
-//        if (key != null) {
-//            evaluateKeyField(key, senderConfiguration);
-//        }
-//        BMap<BString, Object> protocol = getBMapValueIfPresent(secureSocket, SECURESOCKET_CONFIG_PROTOCOL);
-//        if (protocol != null) {
-//            evaluateProtocolField(protocol, senderConfiguration, clientParamList);
-//        }
-//        BMap<BString, Object> certValidation = getBMapValueIfPresent(secureSocket, SECURESOCKET_CONFIG_CERT_VALIDATION);
-//        if (certValidation != null) {
-//            evaluateCertValidationField(certValidation, senderConfiguration);
-//        }
-//        BArray ciphers = secureSocket.containsKey(HttpConstants.SECURESOCKET_CONFIG_CIPHERS) ?
-//                secureSocket.getArrayValue(HttpConstants.SECURESOCKET_CONFIG_CIPHERS) : null;
-//        if (ciphers != null) {
-//            evaluateCiphersField(ciphers, clientParamList);
-//        }
-//        evaluateCommonFields(secureSocket, senderConfiguration, clientParamList);
-//
-//        if (!clientParamList.isEmpty()) {
-//            senderConfiguration.setParameters(clientParamList);
-//        }
+        List<Parameter> clientParamList = new ArrayList<>();
+        NettyConfiguration globalConfig = NettyConfiguration.getInstance();
+        SecretResolver secretResolver = targetConfiguration.getConfigurationContext()
+                .getAxisConfiguration().getSecretResolver();
+
+        populateKeyStoreConfigs(senderConfiguration, secretResolver, globalConfig);
+
+        boolean disableCertValidation = globalConfig.getClientSSLValidateCert();
+        if (disableCertValidation) {
+            senderConfiguration.disableSsl();
+        } else {
+            populateTrustStoreConfigs(senderConfiguration, secretResolver, globalConfig);
+        }
+
+        // TODO: no need to have this if cert is disabled
+        populateProtocolConfigs(senderConfiguration, clientParamList, globalConfig);
+
+        populateCertValidationConfigs(senderConfiguration, globalConfig);
+
+        populateCiphersConfigs(clientParamList, globalConfig);
+
+        populateTimeoutConfigs(senderConfiguration, globalConfig);
+
+//        populateHostnameVerifierConfigs
+
+        if (!clientParamList.isEmpty()) {
+            senderConfiguration.setParameters(clientParamList);
+        }
     }
-}
+
+    public static void populateKeyStoreConfigs(SslConfiguration sslConfiguration, SecretResolver secretResolver,
+                                               NettyConfiguration globalConfig) throws AxisFault {
+
+        String location = globalConfig.getClientSSLKeystoreLocation();
+        String type = globalConfig.getClientSSLKeystoreType();
+        String storePassword = globalConfig.getClientSSLKeystorePassword();
+        String keyPassword = globalConfig.getClientSSLKeystoreKeyPassword();
+
+        if (Objects.isNull(location) || location.isEmpty()) {
+            throw new AxisFault("KeyStore file location must be provided for secure connection");
+        }
+
+        if (Objects.isNull(storePassword)) {
+            throw new AxisFault("KeyStore password must be provided for secure connection");
+        }
+        if (Objects.isNull(keyPassword)) {
+            throw new AxisFault("Cannot proceed because KeyPassword element is missing in KeyStore");
+        }
+        storePassword = MiscellaneousUtil.resolve(storePassword, secretResolver);
+        keyPassword = MiscellaneousUtil.resolve(keyPassword, secretResolver);
+
+        sslConfiguration.setKeyStoreFile(location);
+        sslConfiguration.setKeyStorePass(storePassword);
+        sslConfiguration.setCertPass(keyPassword);
+        sslConfiguration.setTLSStoreType(type);
+    }
+
+    public static void populateTrustStoreConfigs(SslConfiguration sslConfiguration, SecretResolver secretResolver,
+                                                 NettyConfiguration globalConfig) throws AxisFault {
+
+        String location = globalConfig.getClientSSLTruststoreLocation();
+        String type = globalConfig.getClientSSLTruststoreType();
+        String storePassword = globalConfig.getClientSSLTruststorePassword();
+        if (Objects.isNull(storePassword)) {
+            throw new AxisFault("Cannot proceed because Password element is missing in TrustStore");
+        }
+        storePassword = MiscellaneousUtil.resolve(storePassword, secretResolver);
+
+        sslConfiguration.setTrustStoreFile(location);
+        sslConfiguration.setTrustStorePass(storePassword);
+        // TODO: need to edit the transport-http to have a type for truststore - verified from bhashinee
+    }
+
+    private static void populateProtocolConfigs(SslConfiguration sslConfiguration, List<Parameter> paramList,
+                                                NettyConfiguration globalConfig) {
+
+        String configuredHttpsProtocols = globalConfig.getClientSSLHttpsProtocols().replaceAll("\\s", "");
+
+        if (!configuredHttpsProtocols.isEmpty()) {
+            Parameter serverProtocols = new Parameter("sslEnabledProtocols", configuredHttpsProtocols);
+            paramList.add(serverProtocols);
+        }
+
+        String sslProtocol = globalConfig.getClientSSLProtocol();
+        if (Objects.isNull(sslProtocol) || sslProtocol.isEmpty()) {
+            sslProtocol = "TLS";
+        }
+        sslConfiguration.setSSLProtocol(sslProtocol);
+    }
+
+    public static void populateCertValidationConfigs(SslConfiguration sslConfiguration,
+                                                     NettyConfiguration globalConfig) {
+
+
+        boolean certRevocationVerifierEnabled = globalConfig.getClientSSLCertificateRevocationVerifierEnabled();
+
+        if (certRevocationVerifierEnabled) {
+            sslConfiguration.setValidateCertEnabled(true);
+            String cacheSizeString = globalConfig.getClientSSLCertificateRevocationVerifierCacheSize();
+            String cacheDelayString = globalConfig.getClientSSLCertificateRevocationVerifierCacheDelay();
+            Integer cacheSize = null;
+            Integer cacheDelay = null;
+            try {
+                cacheSize = new Integer(cacheSizeString);
+                cacheDelay = new Integer(cacheDelayString);
+            } catch (NumberFormatException e) {
+                // do nothing
+            }
+
+            if (Objects.nonNull(cacheDelay) && cacheDelay != 0) {
+                sslConfiguration.setCacheValidityPeriod(Math.toIntExact(cacheDelay));
+            }
+            if (Objects.nonNull(cacheSize) && cacheSize != 0) {
+                sslConfiguration.setCacheSize(Math.toIntExact(cacheSize));
+            }
+        }
+    }
+
+    private static void populateCiphersConfigs(List<Parameter> paramList, NettyConfiguration globalConfig) {
+
+        String preferredCiphers = globalConfig.getClientSSLPreferredCiphers().replaceAll("\\s", "");
+
+        if (!preferredCiphers.isEmpty()) {
+            Parameter serverParameters = new Parameter("ciphers", preferredCiphers);
+            paramList.add(serverParameters);
+        }
+    }
+
+    public static void populateTimeoutConfigs(SslConfiguration sslConfiguration, NettyConfiguration globalConfig) {
+
+        int sessionTimeout = globalConfig.getClientSSLSessionTimeout();
+        int handshakeTimeout = globalConfig.getClientSSLHandshakeTimeout();
+        if (sessionTimeout > 0) {
+            try {
+                sslConfiguration.setSslSessionTimeOut(sessionTimeout);
+            } catch (NumberFormatException e) {
+                LOG.warn("Invalid number found for ssl sessionTimeout : " + sessionTimeout
+                        + ". Hence, using the default value of 86400s/24h");
+            }
+        }
+        if (handshakeTimeout > 0) {
+            try {
+                sslConfiguration.setSslHandshakeTimeOut(handshakeTimeout);
+            } catch (NumberFormatException e) {
+                LOG.warn("Invalid number found for ssl handshakeTimeout : " + handshakeTimeout +
+                        ". Hence, using the default value of 10s");
+            }
+        }
+    }
+
+    public static void populateHostnameVerifierConfigs(SslConfiguration sslConfiguration,
+                                                       NettyConfiguration globalConfig) throws AxisFault {
+        // TODO: verify from Bhashinee
+        String hostNameVerificationEnabled = globalConfig.getClientSSLHostnameVerifier();
+//        sslConfiguration.setHostNameVerificationEnabled(hostNameVerificationEnabled);
+    }
+
+    }

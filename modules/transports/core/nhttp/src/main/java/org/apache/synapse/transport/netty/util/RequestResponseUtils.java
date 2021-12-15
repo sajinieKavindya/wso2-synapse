@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -20,7 +20,6 @@ package org.apache.synapse.transport.netty.util;
 
 import io.netty.util.AttributeKey;
 import org.apache.axiom.om.OMElement;
-import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axiom.soap.SOAP11Constants;
 import org.apache.axiom.soap.SOAP12Constants;
 import org.apache.axiom.util.UIDGenerator;
@@ -32,15 +31,12 @@ import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.description.java2wsdl.Java2WSDLConstants;
-import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.RequestResponseTransport;
 import org.apache.axis2.transport.TransportUtils;
 import org.apache.axis2.transport.base.BaseConstants;
 import org.apache.axis2.transport.http.HTTPConstants;
-import org.apache.axis2.transport.http.SOAPMessageFormatter;
-import org.apache.axis2.util.MessageProcessorSelector;
-import org.apache.http.protocol.HTTP;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.BaseConfiguration;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
@@ -49,10 +45,7 @@ import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.SecureVaultValueReader;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.wso2.securevault.SecretResolver;
-import org.wso2.securevault.SecretResolverFactory;
 import org.wso2.transport.http.netty.contract.HttpResponseFuture;
 import org.wso2.transport.http.netty.contract.config.InboundMsgSizeValidationConfig;
 import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
@@ -80,7 +73,7 @@ import javax.xml.namespace.QName;
  */
 public class RequestResponseUtils {
 
-    private static final Logger LOGGER = Logger.getLogger(RequestResponseUtils.class);
+    private static final Log LOG = LogFactory.getLog(RequestResponseUtils.class);
 
     /**
      * Create an Axis2 message context for the given HttpCarbonMessage. The carbon message may be in the
@@ -143,61 +136,23 @@ public class RequestResponseUtils {
         return msgCtx;
     }
 
-//    /**
-//     * Set content type headers along with the character encoding if content type header is not preserved.
-//     *
-//     * @param msgContext           message context
-//     * @param sourceResponseDelete source response
-//     * @param formatter            response formatter
-//     * @param format               response format
-//     */
-//    public static void setContentType(MessageContext msgContext, SourceResponseDelete sourceResponseDelete,
-//                                      MessageFormatter formatter, OMOutputFormat format) {
-//
-//        if (DataHolder.getInstance().isPreserveHttpHeader(HTTP.CONTENT_TYPE)) {
-//            return;
-//        }
-//        Object contentTypeInMsgCtx =
-//                msgContext.getProperty(org.apache.axis2.Constants.Configuration.CONTENT_TYPE);
-//        boolean isContentTypeSetFromMsgCtx = false;
-//
-//        // If ContentType header is set in the axis2 message context, use it.
-//        if (contentTypeInMsgCtx != null) {
-//            String contentTypeValueInMsgCtx = contentTypeInMsgCtx.toString();
-//            // Skip multipart/related as it should be taken from formatter.
-//            if (!(contentTypeValueInMsgCtx.contains(
-//                    PassThroughConstants.CONTENT_TYPE_MULTIPART_RELATED) ||
-//                    contentTypeValueInMsgCtx.contains(PassThroughConstants.CONTENT_TYPE_MULTIPART_FORM_DATA))) {
-//
-//                // adding charset only if charset is not available,
-//                if (format != null && contentTypeValueInMsgCtx.indexOf(HTTPConstants.CHAR_SET_ENCODING) == -1 &&
-//                        !"false".equals(msgContext.getProperty(PassThroughConstants.SET_CHARACTER_ENCODING))) {
-//                    String encoding = format.getCharSetEncoding();
-//                    if (encoding != null) {
-//                        contentTypeValueInMsgCtx += "; charset=" + encoding;
-//                    }
-//                }
-//                sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
-//                sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE, contentTypeValueInMsgCtx);
-//                isContentTypeSetFromMsgCtx = true;
-//            }
-//        }
-//
-//        // If ContentType is not set from msg context, get the formatter ContentType
-//        if (!isContentTypeSetFromMsgCtx) {
-//            sourceResponseDelete.removeHeader(HTTP.CONTENT_TYPE);
-//            sourceResponseDelete.addHeader(HTTP.CONTENT_TYPE,
-//                    formatter.getContentType(msgContext, format, msgContext.getSoapAction()));
-//        }
-//    }
-
+    /**
+     * Checks if the request/response body should be written using the appropriate message
+     * formatter.
+     *
+     * @param msgContext axis2 message context
+     * @return true if the request was initiated from a non-http client or if the message has been built.
+     * Otherwise, return false if this is pass-through.
+     */
     public static boolean shouldInvokeFormatterToWriteBody(MessageContext msgContext) {
 
+        // If the property HTTP_CARBON_MESSAGE is null, it means the message was initiated from
+        // a non-http client. In such cases, the message body will always be available in the
+        // envelope itself. Hence, returning true.
         if (Objects.isNull(msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE))) {
             return true;
         }
         return msgContext.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED);
-
     }
 
     /**
@@ -231,17 +186,6 @@ public class RequestResponseUtils {
 
         return contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
                 || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED);
-    }
-
-    /**
-     * Checks if we need to the ignore the message body.
-     *
-     * @param msgContext axis2 message context
-     * @return whether we can ignore the message body
-     */
-    public static boolean ignoreMessageBody(MessageContext msgContext) {
-
-        return HttpUtils.isGetRequest(msgContext) || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
     }
 
     /**
@@ -513,13 +457,9 @@ public class RequestResponseUtils {
         Parameter keyParam = transportIn.getParameter(BridgeConstants.KEY_STORE);
         OMElement keyStoreEl = keyParam != null ? keyParam.getParameterElement().getFirstElement() : null;
 
-        SecretResolver secretResolver;
-        ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
-        if (configurationContext != null && configurationContext.getAxisConfiguration() != null) {
-            secretResolver = configurationContext.getAxisConfiguration().getSecretResolver();
-        } else {
-            secretResolver = SecretResolverFactory.create(keyStoreEl, false);
-        }
+        SecretResolver secretResolver = sourceConfiguration.getConfigurationContext()
+                .getAxisConfiguration().getSecretResolver();
+
         populateKeyStoreConfigs(keyStoreEl, listenerConfiguration, secretResolver);
 
         // evaluate truststore field
@@ -589,7 +529,6 @@ public class RequestResponseUtils {
             }
             String storePassword = SecureVaultValueReader.getSecureVaultValue(secretResolver, storePasswordEl);
             String keyPassword = SecureVaultValueReader.getSecureVaultValue(secretResolver, keyPasswordEl);
-            // TODO: verify this -> added the sslConfiguration.setCertPass(keyPassword);
 
             sslConfiguration.setKeyStoreFile(location);
             sslConfiguration.setKeyStorePass(storePassword);
@@ -602,7 +541,7 @@ public class RequestResponseUtils {
                                                  SecretResolver secretResolver) throws AxisFault {
 
         String location = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.STORE_LOCATION);
-        // TODO: verify this
+        // TODO: need to edit the transport-http to have a type for truststore - verified from bhashinee
         String type = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.TYPE);
         OMElement storePasswordEl = trustStoreEl.getFirstChildWithName(new QName(BridgeConstants.PASSWORD));
         if (storePasswordEl == null) {
@@ -785,19 +724,19 @@ public class RequestResponseUtils {
                 messageOutputStream.close();
             }
         } catch (IOException e) {
-            LOGGER.error("Couldn't close message output stream", e);
+            LOG.error("Couldn't close message output stream", e);
         }
     }
 
     public static void handleException(String s, Exception e) throws AxisFault {
 
-        LOGGER.error(s, e);
+        LOG.error(s, e);
         throw new AxisFault(s, e);
     }
 
     public static void handleException(String msg) throws AxisFault {
 
-        LOGGER.error(msg);
+        LOG.error(msg);
         throw new AxisFault(msg);
     }
 }

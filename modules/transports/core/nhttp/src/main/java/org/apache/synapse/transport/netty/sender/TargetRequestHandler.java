@@ -18,8 +18,11 @@
  */
 package org.apache.synapse.transport.netty.sender;
 
+import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpVersion;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
@@ -29,7 +32,8 @@ import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
 import org.apache.http.protocol.HTTP;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
@@ -65,7 +69,7 @@ import java.util.Objects;
  */
 public class TargetRequestHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(TargetRequestHandler.class);
+    private static final Log LOG = LogFactory.getLog(TargetRequestHandler.class);
 
     /**
      * Creates outbound request to be sent to the Backend service.
@@ -79,9 +83,9 @@ public class TargetRequestHandler {
                                                              TargetConfiguration targetConfiguration)
             throws AxisFault {
 
-        HttpCarbonMessage outboundRequest = HttpUtils.createHttpCarbonMessage(true);
+        HttpCarbonMessage outboundRequest = new HttpCarbonMessage(
+                new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, ""));
         prepareOutboundRequest(url, outboundRequest, msgContext, targetConfiguration);
-//        handleAcceptEncodingHeader(outboundRequest, getCompressionConfigFromEndpointConfig(config));
         return outboundRequest;
     }
 
@@ -120,10 +124,9 @@ public class TargetRequestHandler {
 
         HttpHeaders headers = outboundRequest.getHeaders();
         HttpUtils.removeUnwantedHeadersFromInternalTransportHeadersMap(msgContext, targetConfiguration);
-        // TODO: modify the content of the following method
+        HttpUtils.addTransportHeadersToTransportMessage(headers, msgContext);
         setContentTypeHeaderIfApplicable(msgContext, outboundRequest, targetConfiguration);
         setWSAActionIfApplicable(msgContext, headers);
-        HttpUtils.addTransportHeadersToTransportMessage(headers, msgContext);
         HttpUtils.setHostHeader(host, port, headers, msgContext,
                 targetConfiguration.isPreserveHttpHeader(HTTPConstants.HEADER_HOST));
         setOutboundUserAgent(headers);
@@ -151,14 +154,14 @@ public class TargetRequestHandler {
 
     private static String getOutboundReqPath(URL url, MessageContext msgCtx) throws IOException {
 
-        if (HttpUtils.isGetRequest(msgCtx) || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
+        if (HttpUtils.isGETRequest(msgCtx) || (RelayUtils.isDeleteRequestWithoutPayload(msgCtx))) {
             MessageFormatter formatter = MessageProcessorSelector.getMessageFormatter(msgCtx);
             OMOutputFormat format = PassThroughTransportUtils.getOMOutputFormat(msgCtx);
+
             if (formatter != null) {
                 URL targetURL = formatter.getTargetAddress(msgCtx, format, url);
                 if (targetURL != null && !targetURL.toString().isEmpty()) {
-                    if (msgCtx.getProperty(BridgeConstants.POST_TO_URI) != null
-                            && Boolean.TRUE.toString().equals(msgCtx.getProperty(BridgeConstants.POST_TO_URI))) {
+                    if (msgCtx.isPropertyTrue(BridgeConstants.POST_TO_URI)) {
                         return targetURL.toString();
                     } else {
                         return targetURL.getPath()
@@ -174,24 +177,14 @@ public class TargetRequestHandler {
             return url.toString();
         }
 
-        String fullUrl = (String) msgCtx.getProperty(PassThroughConstants.FULL_URI);
         // TODO: need to check "(route.getProxyHost() != null && !route.isTunnelled())" as well
-        String path = "true".equals(fullUrl) ?
-                url.toString() : url.getPath() +
-                (url.getQuery() != null ? "?" + url.getQuery() : "");
-
-        return path;
-    }
-
-    private void setKeepAliveConfig(MessageContext msgContext) {
-
-        String noKeepAlive = (String) msgContext.getProperty(BridgeConstants.NO_KEEPALIVE);
-        boolean keepAlive = !BridgeConstants.VALUE_TRUE.equalsIgnoreCase(noKeepAlive)
-                || !NettyConfiguration.getInstance().isKeepAliveDisabled();
+        return msgCtx.isPropertyTrue(BridgeConstants.FULL_URI)
+                ? url.toString() : url.getPath() + (url.getQuery() != null ? "?" + url.getQuery() : "");
     }
 
     private static void setOutboundUserAgent(HttpHeaders headers) {
         // The one in pass-through is "Synapse-PT-HttpComponents-NIO"
+        //TODO: refactor the name
         String userAgent = "WSO2-Synapse-HTTP";
 
         if (!headers.contains(HttpHeaderNames.USER_AGENT)) {
@@ -216,9 +209,6 @@ public class TargetRequestHandler {
                 // skip of setting formatter specific content Type
                 if (!messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_RELATED)
                         && !messageType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)) {
-                    if (transportHeaders != null && !cType.isEmpty()) {
-                        transportHeaders.put(HTTP.CONTENT_TYPE, cType);
-                    }
                     outboundRequest.setHeader(HTTP.CONTENT_TYPE, cType);
                 } else {
                     // if messageType is related to multipart and if message
@@ -240,14 +230,6 @@ public class TargetRequestHandler {
             MessageFormatter formatter = MessageProcessorSelector.getMessageFormatter(msgCtx);
             if (formatter != null) {
                 outboundRequest.removeHeader(HTTP.CONTENT_TYPE);
-            }
-        }
-
-        if (transportHeaders != null) {
-            String trpContentType = (String) transportHeaders.get(HTTP.CONTENT_TYPE);
-            if (trpContentType != null && !trpContentType.equals("")
-                    && !HttpUtils.isMultipartContent(trpContentType)) {
-                outboundRequest.setHeader(HTTP.CONTENT_TYPE, trpContentType);
             }
         }
     }
@@ -328,20 +310,23 @@ public class TargetRequestHandler {
 
         MessageFormatter messageFormatter =
                 MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
-        if (msgCtx.isSOAP11() && soapAction != null && soapAction.length() > 0 && Objects.nonNull(messageFormatter)) {
+        if (msgCtx.isSOAP11() && Objects.nonNull(soapAction) && !soapAction.isEmpty()
+                && Objects.nonNull(messageFormatter)) {
             headers.add(HTTPConstants.HEADER_SOAP_ACTION, messageFormatter.formatSOAPAction(msgCtx, null, soapAction));
         }
     }
 
-    public static HttpClientConnector createSimpleHttpClient(URL url, MessageContext msgContext,
-                                                             HttpWsConnectorFactory httpWsConnectorFactory,
-                                                             ConnectionManager connectionManager)
+    public static HttpClientConnector createHttpClient(URL url, MessageContext msgContext,
+                                                       HttpWsConnectorFactory httpWsConnectorFactory,
+                                                       ConnectionManager connectionManager,
+                                                       TargetConfiguration targetConfiguration)
             throws AxisFault {
 
         try {
             SenderConfiguration senderConfiguration = new SenderConfiguration();
-            populateSenderConfigurations(msgContext, url);
+            populateSenderConfigurations(msgContext, senderConfiguration, targetConfiguration, url);
 
+            // TODO:
             return httpWsConnectorFactory.createHttpClientConnector(new HashMap<>(), senderConfiguration,
                     connectionManager);
 
@@ -350,18 +335,18 @@ public class TargetRequestHandler {
         }
     }
 
-    public static SenderConfiguration populateSenderConfigurations(MessageContext msgContext,
-                                                                   URL url) throws AxisFault {
+    public static void populateSenderConfigurations(MessageContext msgContext,
+                                                    SenderConfiguration senderConfiguration,
+                                                    TargetConfiguration targetConfiguration,
+                                                    URL url) throws AxisFault {
 
-        SenderConfiguration senderConfiguration = new SenderConfiguration();
-
-        String scheme = url.getProtocol() != null ? url.getProtocol() : "http";
+        String scheme = url.getProtocol() != null ? url.getProtocol() : BridgeConstants.PROTOCOL_HTTP;
         senderConfiguration.setScheme(scheme);
 
-        String httpVersion = "1.1";
+        String httpVersion = BridgeConstants.HTTP_1_1_VERSION;
         String forceHttp10 = (String) msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0);
         if (BridgeConstants.VALUE_TRUE.equalsIgnoreCase(forceHttp10)) {
-            httpVersion = "1.0";
+            httpVersion = BridgeConstants.HTTP_1_0_VERSION;
         }
         senderConfiguration.setHttpVersion(httpVersion);
 
@@ -371,10 +356,10 @@ public class TargetRequestHandler {
             senderConfiguration.setChunkingConfig(ChunkConfig.NEVER);
         }
 
-        if (isClientEndpointKeepAliveEnabled(msgContext)) {
-            senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
-        } else {
+        if (isClientEndpointKeepAliveDisabled(msgContext)) {
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.NEVER);
+        } else {
+            senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
         }
 
         if (RequestResponseUtils.isHTTPTraceLoggerEnabled()) {
@@ -393,19 +378,18 @@ public class TargetRequestHandler {
 
         int timeout = NettyConfiguration.getInstance().getClientEndpointSocketTimeout();
         if (timeout < 0) {
+            //TODO: what happens if this is 0. also make the default values as constants
             senderConfiguration.setSocketIdleTimeout(0);
         } else {
             senderConfiguration.setSocketIdleTimeout(timeout * 1000);
         }
 
-        if (scheme.equals(BridgeConstants.PROTOCOL_HTTPS)) {
-            HttpUtils.populateSSLConfiguration(senderConfiguration);
+        if (BridgeConstants.PROTOCOL_HTTPS.equals(scheme)) {
+            HttpUtils.populateSSLConfiguration(senderConfiguration, targetConfiguration);
         }
-
-        return senderConfiguration;
     }
 
-    public static boolean isClientEndpointChunkingEnabled(MessageContext msgContext) {
+    private static boolean isClientEndpointChunkingEnabled(MessageContext msgContext) {
 
         if (msgContext.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH)) {
             return false;
@@ -416,11 +400,23 @@ public class TargetRequestHandler {
         }
     }
 
-    public static boolean isClientEndpointKeepAliveEnabled(MessageContext msgContext) {
+    private static boolean isClientEndpointKeepAliveDisabled(MessageContext msgContext) {
 
-        String noKeepAlive = (String) msgContext.getProperty(BridgeConstants.NO_KEEPALIVE);
-        return !BridgeConstants.VALUE_TRUE.equalsIgnoreCase(noKeepAlive)
-                || !NettyConfiguration.getInstance().isKeepAliveDisabled();
+        //TODO: put a code comment
+        String noKeepAliveProperty = (String) msgContext.getProperty(BridgeConstants.NO_KEEPALIVE);
+        if (Objects.nonNull(noKeepAliveProperty)) {
+            return msgContext.isPropertyTrue(noKeepAliveProperty);
+        }
+
+        Map transportHeaders = (Map) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
+        if (transportHeaders != null) {
+            Object connectionHeader = transportHeaders.get(HTTP.CONN_DIRECTIVE);
+            if (Objects.nonNull(connectionHeader) && "close".equalsIgnoreCase(connectionHeader.toString())) {
+                return true;
+            }
+        }
+
+        return NettyConfiguration.getInstance().isKeepAliveDisabled();
     }
 
     public static void sendRequest(HttpClientConnector clientConnector, HttpCarbonMessage outboundRequestMsg,
@@ -437,37 +433,45 @@ public class TargetRequestHandler {
                                            TargetConfiguration targetConfiguration) {
 
         HttpResponseFuture future = clientConnector.send(outboundRequestMsg);
-        future.setHttpConnectorListener(new Axis2HttpInboundRespListener(targetConfiguration.getWorkerPool(),
+        future.setHttpConnectorListener(new Axis2HttpTargetRespListener(targetConfiguration.getWorkerPool(),
                 msgContext, targetConfiguration));
 
     }
 
-    static void serializeData(MessageContext msgCtx, HttpCarbonMessage responseMsg)
+    private static void serializeData(MessageContext msgCtx, HttpCarbonMessage responseMsg)
             throws AxisFault {
 
-        HttpMessageDataStreamer outboundMsgDataStreamer = HttpUtils.getResponseDataStreamer(responseMsg);
-        if (RequestResponseUtils.ignoreMessageBody(msgCtx)) {
-            OutputStream messageOutputStream = outboundMsgDataStreamer.getOutputStream();
-            HttpUtils.serializeBytes(messageOutputStream, new byte[0]);
-            HttpUtils.closeMessageOutputStream(messageOutputStream);
+        if (ignoreMessageBody(msgCtx)) {
+            responseMsg.waitAndReleaseAllEntities();
+            responseMsg.completeMessage();
         } else {
             if (RequestResponseUtils.shouldInvokeFormatterToWriteBody(msgCtx)) {
+                HttpMessageDataStreamer outboundMsgDataStreamer = HttpUtils.getResponseDataStreamer(responseMsg);
                 OutputStream messageOutputStream = outboundMsgDataStreamer.getOutputStream();
                 MessageFormatter messageFormatter =
                         MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
                 if (Objects.nonNull(messageFormatter)) {
                     HttpUtils.serializeDataUsingMessageFormatter(msgCtx, messageFormatter, messageOutputStream);
                 } else {
-                    LOGGER.warn("Could not serialize the message. No available formatter to write the "
+                    LOG.warn("Could not serialize the message. No available formatter to write the "
                             + "message to the backend.");
                 }
-                HttpUtils.closeMessageOutputStream(messageOutputStream);
             } else {
                 HttpCarbonMessage inboundCarbonMessage =
                         (HttpCarbonMessage) msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-                HttpUtils.serializeDataFromInboundHttpCarbonMessage(inboundCarbonMessage, responseMsg);
+                HttpUtils.copyContentFromInboundHttpCarbonMessage(inboundCarbonMessage, responseMsg);
             }
         }
     }
 
+    /**
+     * Checks if we need to the ignore the message body.
+     *
+     * @param msgContext axis2 message context
+     * @return whether we can ignore the message body
+     */
+    private static boolean ignoreMessageBody(MessageContext msgContext) {
+
+        return HttpUtils.isGETRequest(msgContext) || RelayUtils.isDeleteRequestWithoutPayload(msgContext);
+    }
 }

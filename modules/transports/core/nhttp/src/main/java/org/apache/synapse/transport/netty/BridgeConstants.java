@@ -23,10 +23,14 @@ package org.apache.synapse.transport.netty;
  */
 public class BridgeConstants {
 
+    public static final String TRANSPORT_NAME_HTTP = "http";
+    public static final String TRANSPORT_NAME_HTTPS = "https";
+
     public static final String BRIDGE_LOG_PREFIX = "[Bridge] ";
 
     public static final String VALUE_TRUE = "true";
     public static final String VALUE_FALSE = "false";
+    public static final String TRUE = "TRUE";
 
     public static final String NO_ENTITY_BODY = "NO_ENTITY_BODY";
     public static final String PROTOCOL = "PROTOCOL";
@@ -40,9 +44,9 @@ public class BridgeConstants {
 
     public static final String CONTENT_LEN = "Content-Length";
 
-
     public static final String REST_URL_POSTFIX = "REST_URL_POSTFIX";
     public static final String SERVICE_PREFIX = "SERVICE_PREFIX";
+    public static final String FAULT_MESSAGE = "FAULT_MESSAGE";
 
     public static final String REST_REQUEST_CONTENT_TYPE = "synapse.internal.rest.contentType";
     public static final String HTTP_CARBON_MESSAGE = "HTTP_CARBON_MESSAGE";
@@ -53,12 +57,13 @@ public class BridgeConstants {
     public static final long NO_CONTENT_LENGTH_FOUND = -1;
     public static final short ONE_BYTE = 1;
 
-    // This is similar to isDoingREST  - if the request contains a REST (i.e. format=POX | GET | REST) call, then we set this to TRUE
+    // This is similar to isDoingREST  - if the request contains a REST (i.e. format=POX | GET | REST) call,
+    // then we set this to TRUE
     public static final String INVOKED_REST = "invokedREST";
+    public static final String NON_BLOCKING_TRANSPORT = "NonBlockingTransport";
 
     public static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
     public static final String RELAY_EARLY_BUILD = "relay_early_build";
-    public static final String RAW_PAYLOAD = "RAW_PAYLOAD";
     public static final String HTTP_SOURCE_CONFIGURATION = "HTTP_SOURCE_CONFIGURATION";
     public static final String HTTP_TARGET_CONFIGURATION = "HTTP_TARGET_CONFIGURATION";
     public static final String POOLED_BYTE_BUFFER_FACTORY = "POOLED_BYTE_BUFFER_FACTORY";
@@ -67,9 +72,14 @@ public class BridgeConstants {
     public static final String NIO_ACK_REQUESTED = "NIO-ACK-Requested";
     public static final String WSDL_REQUEST_HANDLED = "WSDL_REQUEST_HANDLED";
     // used to define the default content type as a parameter in the axis2.xml
-    public static final String REQUEST_CONTENT_TYPE = "DEFAULT_REQUEST_CONTENT_TYPE";
+    public static final String DEFAULT_REQUEST_CONTENT_TYPE = "DEFAULT_REQUEST_CONTENT_TYPE";
     public static final String VALID_CACHED_RESPONSE = "VALID_CACHED_RESPONSE";
     public static final String ETAG_HEADER = "ETag";
+    public static final String PRE_LOCATION_HEADER = "PRE_LOCATION_HEADER";
+    public static final String FULL_URI = "FULL_URI";
+    public static final String INTERNAL_EXCEPTION_ORIGIN = "_INTERNAL_EXCEPTION_ORIGIN";
+    public static final String INTERNAL_ORIGIN_ERROR_HANDLER = "TARGET_ERROR_HANDLER";
+    public static final String LOCATION = "Location";
 
     // move later
     public static final String CARBON_SERVER_XML_NAMESPACE = "http://wso2.org/projects/carbon/carbon.xml";
@@ -81,6 +91,7 @@ public class BridgeConstants {
     public static final float HTTP_1_0 = 1.0f;
     public static final String HTTP_2_0 = "2.0";
     public static final String HTTP_VERSION_PREFIX = "HTTP/";
+    public static final String HTTP_1_0_VERSION = "1.0";
     public static final String HTTP_1_1_VERSION = "1.1";
     public static final String HTTP_2_0_VERSION = "2.0";
 
@@ -129,6 +140,30 @@ public class BridgeConstants {
     public static final String HTTP_STATUS_CODE_SENT_FROM_BACKEND = "HTTP_STATUS_CODE_SENT_FROM_BACKEND";
     public static final String HTTP_REASON_PHRASE_SENT_FROM_BACKEND = "HTTP_REASON_PHRASE_SENT_FROM_BACKEND";
 
+    /**
+     * An Axis2 message context property indicating a transport send failure.
+     */
+    public static final String SENDING_FAULT = "SENDING_FAULT";
+    /**
+     * The message context property name which holds the error code for the last encountered exception.
+     */
+    public static final String ERROR_CODE = "ERROR_CODE";
+    /**
+     * The MC property name which holds the error message for the last encountered exception.
+     */
+    public static final String ERROR_MESSAGE = "ERROR_MESSAGE";
+    /**
+     * The message context property name which holds the error detail (stack trace) for the last encountered exception.
+     */
+    public static final String ERROR_DETAIL = "ERROR_DETAIL";
+    /**
+     * The message context property name which holds the exception (if any) for the last encountered exception.
+     */
+    public static final String ERROR_EXCEPTION = "ERROR_EXCEPTION";
+    /**
+     * An Axis2 message context property that hols the raw payload when an error occurs while building message.
+     */
+    public static final String RAW_PAYLOAD = "RAW_PAYLOAD";
 
     /**
      * When ESB receives a soap fault as a HTTP 500 message, ESB will forward this fault to client with status code 200.
@@ -194,13 +229,13 @@ public class BridgeConstants {
      */
     public static final String HTTP_ETAG_ENABLED = "HTTP_ETAG";
 
-    // This property can be used to remove character encode. By default character encoding is enabled in the ESB profile.
-    // If this property is set to 'false', the 'CHARACTER_SET_ENCODING' property cannot be used.
+    // This property can be used to remove character encode. By default character encoding is enabled in the ESB
+    // profile. If this property is set to 'false', the 'CHARACTER_SET_ENCODING' property cannot be used.
     public static final String SET_CHARACTER_ENCODING = "setCharacterEncoding";
 
     /**
-     * The message context property name that holds the error code for the last encountered exception.
+     * A message context property indicating "TRUE". This will set on success scenarios.
      */
-    public static final String ERROR_CODE = "ERROR_CODE";
+    public static final String HTTP_202_RECEIVED = "HTTP_202_RECEIVED";
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021. WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022. WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -41,7 +41,8 @@ import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.transport.http.XFormURLEncodedFormatter;
 import org.apache.commons.io.IOUtils;
-import org.apache.log4j.Logger;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
@@ -62,7 +63,7 @@ import javax.xml.stream.XMLStreamException;
  * Class MessageUtils contains helper methods that are used to build the payload.
  */
 public class MessageUtils {
-    private static final Logger LOGGER = Logger.getLogger(MessageUtils.class);
+    private static final Log LOG = LogFactory.getLog(MessageUtils.class);
     private static final DeferredMessageBuilder messageBuilder = new DeferredMessageBuilder();
 
     private static boolean noAddressingHandler = false;
@@ -95,8 +96,8 @@ public class MessageUtils {
         }
 
         if (msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE) == null) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Content Type is null and the message is not build");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Content Type is null and the message is not build");
             }
             msgCtx.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED,
                     Boolean.TRUE);
@@ -122,7 +123,7 @@ public class MessageUtils {
                 contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
             }
         } catch (NumberFormatException e) {
-            LOGGER.error("NumberFormatException");
+            LOG.error("NumberFormatException");
         }
 
         if (contentLength <= 0) {
@@ -202,7 +203,7 @@ public class MessageUtils {
                         if (rawData == null) {
                             rawData = byteArrayOutputStream.toString();
                         }
-                        LOGGER.error("Error while building the message.\n" + rawData);
+                        LOG.error("Error while building the message.\n" + rawData);
                         msgCtx.setProperty(PassThroughConstants.RAW_PAYLOAD, rawData);
                         throw e;
                     }
@@ -284,8 +285,8 @@ public class MessageUtils {
         if (messageFormatString != null) {
             messageFormatter = msgContext.getConfigurationContext()
                     .getAxisConfiguration().getMessageFormatter(messageFormatString);
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Message format is: " + messageFormatString
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Message format is: " + messageFormatString
                              + "; message formatter returned by AxisConfiguration: " + messageFormatter);
             }
         }

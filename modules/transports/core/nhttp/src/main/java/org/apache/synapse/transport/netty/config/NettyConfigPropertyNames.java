@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -121,8 +121,31 @@ public class NettyConfigPropertyNames {
 
     public static final String HTTP_GET_REQUEST_PROCESSOR = "http.get.request.processor";
 
+    public static final String HTTP_LISTENER_HOSTNAME = "http.listener.hostname";
+
     public static final String HTTP_TRANSPORT_MEDIATION_INTERCEPTOR = "http.transport.mediation.interceptor";
 
     public static final String HTTP_BLOCK_SERVICE_LIST = "http.block_service_list";
+
+    public static final String CLIENT_SSL_KEYSTORE_LOCATION = "client.ssl.keystore.location";
+    public static final String CLIENT_SSL_KEYSTORE_TYPE = "client.ssl.keystore.type";
+    public static final String CLIENT_SSL_KEYSTORE_PASSWORD = "client.ssl.keystore.password";
+    public static final String CLIENT_SSL_KEYSTORE_KEYPASSWORD = "client.ssl.keystore.keypassword";
+    public static final String CLIENT_SSL_TRUSTSTORE_LOCATION = "client.ssl.truststore.location";
+    public static final String CLIENT_SSL_TRUSTSTORE_TYPE = "client.ssl.truststore.type";
+    public static final String CLIENT_SSL_TRUSTSTORE_PASSWORD = "client.ssl.truststore.password";
+    public static final String CLIENT_SSL_HTTPS_PROTOCOLS = "client.ssl.https.protocols";
+    public static final String CLIENT_SSL_PROTOCOL = "client.ssl.protocol";
+    public static final String CLIENT_SSL_PREFERRED_CIPHERS = "client.ssl.preferred.ciphers";
+    public static final String CLIENT_SSL_SESSION_TIMEOUT = "client.ssl.session.timeout.in.seconds";
+    public static final String CLIENT_SSL_HANDSHAKE_TIMEOUT = "client.ssl.handshake.timeout.in.seconds";
+    public static final String CLIENT_SSL_DISABLE_CERT_VALIDATION = "client.ssl.disable.cert.validation";
+    public static final String CLIENT_SSL_HOSTNAME_VERIFIER = "client.ssl.hostname.verifier";
+    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_ENABLE
+            = "client.ssl.certificate.revocation.verifier.enable";
+    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_SIZE
+            = "client.ssl.certificate.revocation.verifier.cache.size";
+    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_DELAY
+            = "client.ssl.certificate.revocation.verifier.cache.delay";
 
 }

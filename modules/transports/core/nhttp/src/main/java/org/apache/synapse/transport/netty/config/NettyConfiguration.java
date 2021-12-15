@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -19,8 +19,8 @@
 package org.apache.synapse.transport.netty.config;
 
 import org.apache.axis2.transport.base.threads.WorkerPool;
-import org.apache.log4j.Logger;
-import org.apache.synapse.transport.passthru.ConnectCallback;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.config.PassThroughConfigPNames;
@@ -39,15 +39,17 @@ import java.util.Properties;
  */
 public class NettyConfiguration {
 
-    private static final Logger LOGGER = Logger.getLogger(NettyConfiguration.class);
+    private static final Log LOG = LogFactory.getLog(NettyConfiguration.class);
 
     /**
      * Default tuning parameter values.
      */
-    private static final int DEFAULT_WORKER_POOL_SIZE_CORE = 400;
-    private static final int DEFAULT_WORKER_POOL_SIZE_MAX = 400;
-    private static final int DEFAULT_WORKER_THREAD_KEEPALIVE_SEC = 60;
-    private static final int DEFAULT_WORKER_POOL_QUEUE_LENGTH = -1;
+    public static final int DEFAULT_WORKER_POOL_SIZE_CORE = 400;
+    public static final int DEFAULT_WORKER_POOL_SIZE_MAX = 400;
+    public static final int DEFAULT_WORKER_THREAD_KEEPALIVE_SEC = 60;
+    public static final int DEFAULT_WORKER_POOL_QUEUE_LENGTH = -1;
+    public static final String HTTP_WORKER_THREAD_GROUP_NAME = "HTTP Worker Thread Group";
+    public static final String HTTP_WORKER_THREAD_ID = "HTTPWorker";
 
     //additional rest dispatch handlers
     private static final String REST_DISPATCHER_SERVICE = "rest.dispatcher.service";
@@ -226,6 +228,11 @@ public class NettyConfiguration {
         return isKeepAliveDisabled;
     }
 
+    public String getListenerHostname() {
+        return ConfigurationBuilderUtil
+                .getStringProperty(NettyConfigPropertyNames.HTTP_LISTENER_HOSTNAME, "", props);
+
+    }
     public String getHttpGetRequestProcessorClass() {
         return ConfigurationBuilderUtil
                     .getStringProperty(NettyConfigPropertyNames.HTTP_GET_REQUEST_PROCESSOR, "", props);
@@ -261,6 +268,91 @@ public class NettyConfiguration {
     public String getResponsePreserveHttpHeaders() {
         return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.HTTP_RESPONSE_HEADERS_PRESERVE,
                 "", props);
+    }
+
+    public String getClientSSLKeystoreLocation() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_KEYSTORE_LOCATION,
+                "", props);
+    }
+
+    public String getClientSSLKeystoreType() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_KEYSTORE_TYPE,
+                "", props);
+    }
+
+    public String getClientSSLKeystorePassword() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_KEYSTORE_PASSWORD,
+                "", props);
+    }
+
+    public String getClientSSLKeystoreKeyPassword() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_KEYSTORE_KEYPASSWORD,
+                "", props);
+    }
+
+    public String getClientSSLTruststoreLocation() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_TRUSTSTORE_LOCATION,
+                "", props);
+    }
+
+    public String getClientSSLTruststoreType() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_TRUSTSTORE_TYPE,
+                "", props);
+    }
+
+    public String getClientSSLTruststorePassword() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_TRUSTSTORE_PASSWORD,
+                "", props);
+    }
+
+    public String getClientSSLHttpsProtocols() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_HTTPS_PROTOCOLS,
+                "", props);
+    }
+
+    public String getClientSSLProtocol() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_PROTOCOL,
+                "", props);
+    }
+
+    public String getClientSSLPreferredCiphers() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_PREFERRED_CIPHERS,
+                "", props);
+    }
+
+    public int getClientSSLSessionTimeout() {
+        return ConfigurationBuilderUtil.getIntProperty(NettyConfigPropertyNames.CLIENT_SSL_SESSION_TIMEOUT,
+                0, props);
+    }
+
+    public int getClientSSLHandshakeTimeout() {
+        return ConfigurationBuilderUtil.getIntProperty(NettyConfigPropertyNames.CLIENT_SSL_HANDSHAKE_TIMEOUT,
+                0, props);
+    }
+
+    public Boolean getClientSSLValidateCert() {
+        return ConfigurationBuilderUtil.getBooleanProperty(NettyConfigPropertyNames.CLIENT_SSL_DISABLE_CERT_VALIDATION,
+                false, props);
+    }
+
+    public String getClientSSLHostnameVerifier() {
+        return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.CLIENT_SSL_HOSTNAME_VERIFIER,
+                "", props);
+    }
+
+    public boolean getClientSSLCertificateRevocationVerifierEnabled() {
+        return ConfigurationBuilderUtil.getBooleanProperty(
+                NettyConfigPropertyNames.CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_ENABLE, false, props);
+    }
+
+    public String getClientSSLCertificateRevocationVerifierCacheSize() {
+        return ConfigurationBuilderUtil.getStringProperty(
+                NettyConfigPropertyNames.CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_SIZE, "", props);
+    }
+
+    public String getClientSSLCertificateRevocationVerifierCacheDelay() {
+        return ConfigurationBuilderUtil.getStringProperty(
+                NettyConfigPropertyNames.CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_DELAY, "", props);
     }
 
     /**
@@ -299,8 +391,8 @@ public class NettyConfiguration {
         Properties properties = new Properties();
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
 
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Loading the file '" + filePath + "' from classpath");
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Loading the file '" + filePath + "' from classpath");
         }
 
         InputStream in  = null;
@@ -313,25 +405,25 @@ public class NettyConfiguration {
                         + File.separator + filePath);
             } catch (FileNotFoundException e) {
                 String msg = "Error loading properties from a file at from the System defined location: " + filePath;
-                LOGGER.warn(msg);
+                LOG.warn(msg);
             }
         }
 
 
         if (in == null) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Unable to load file  '" + filePath + "'");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Unable to load file  '" + filePath + "'");
             }
 
             filePath = "conf" + File.separatorChar + filePath;
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Loading the file '" + filePath + "'");
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Loading the file '" + filePath + "'");
             }
 
             in = cl.getResourceAsStream(filePath);
             if (in == null) {
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("Unable to load file  '" + filePath + "'");
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Unable to load file  '" + filePath + "'");
                 }
             }
         }
@@ -340,7 +432,7 @@ public class NettyConfiguration {
                 properties.load(in);
             } catch (IOException e) {
                 String msg = "Error loading properties from a file at : " + filePath;
-                LOGGER.error(msg, e);
+                LOG.error(msg, e);
             }
         }
         return properties;
