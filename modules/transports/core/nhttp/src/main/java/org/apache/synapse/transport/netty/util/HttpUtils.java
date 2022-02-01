@@ -27,22 +27,15 @@ import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.http.HTTPConstants;
-import org.apache.http.protocol.HTTP;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.protocol.HTTP;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.BaseConfiguration;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
-import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
-import org.wso2.securevault.SecretResolver;
-import org.wso2.securevault.commons.MiscellaneousUtil;
 import org.wso2.transport.http.netty.contract.HttpResponseFuture;
-import org.wso2.transport.http.netty.contract.config.ChunkConfig;
-import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
-import org.wso2.transport.http.netty.contract.config.Parameter;
-import org.wso2.transport.http.netty.contract.config.SslConfiguration;
 import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.ConnectionManager;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.PoolConfiguration;
@@ -52,9 +45,7 @@ import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -152,36 +143,6 @@ public class HttpUtils {
         return Objects.nonNull(faultsAsHttp200Property) && "true".equalsIgnoreCase(faultsAsHttp200Property.toString());
     }
 
-    public static ChunkConfig getChunkConfig(String chunkConfig) throws AxisFault {
-
-        switch (chunkConfig) {
-            case BridgeConstants.AUTO:
-                return ChunkConfig.AUTO;
-            case BridgeConstants.ALWAYS:
-                return ChunkConfig.ALWAYS;
-            case BridgeConstants.NEVER:
-                return ChunkConfig.NEVER;
-            default:
-                throw new AxisFault(
-                        "Invalid configuration found for Transfer-Encoding: " + chunkConfig);
-        }
-    }
-
-    public static KeepAliveConfig getKeepAliveConfig(String keepAliveConfig) throws AxisFault {
-
-        switch (keepAliveConfig) {
-            case BridgeConstants.AUTO:
-                return KeepAliveConfig.AUTO;
-            case BridgeConstants.ALWAYS:
-                return KeepAliveConfig.ALWAYS;
-            case BridgeConstants.NEVER:
-                return KeepAliveConfig.NEVER;
-            default:
-                throw new AxisFault(
-                        "Invalid configuration found for Keep-Alive: " + keepAliveConfig);
-        }
-    }
-
     /**
      * Invokes {@code HttpResponseFuture} respond method to send the response back to the client.
      *
@@ -220,15 +181,6 @@ public class HttpUtils {
         return outboundMsgDataStreamer;
     }
 
-    public static void serializeBytes(OutputStream outputStream, byte bytes[]) throws AxisFault {
-
-        try {
-            outputStream.write(bytes);
-        } catch (IOException e) {
-            RequestResponseUtils.handleException("Error occurred while serializing the message body.", e);
-        }
-    }
-
     public static void serializeDataUsingMessageFormatter(MessageContext msgContext, MessageFormatter messageFormatter,
                                                           OutputStream outputStream) throws AxisFault {
 
@@ -264,15 +216,6 @@ public class HttpUtils {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Couldn't close the message output stream: " + e.getMessage());
             }
-        }
-    }
-
-    public static KeepAliveConfig getKeepAliveConfig(boolean keepAlive) throws AxisFault {
-
-        if (keepAlive) {
-            return getKeepAliveConfig(BridgeConstants.ALWAYS);
-        } else {
-            return getKeepAliveConfig(BridgeConstants.NEVER);
         }
     }
 
@@ -354,170 +297,4 @@ public class HttpUtils {
         }
     }
 
-    /**
-     * Populates SSL configuration instance with secure socket configuration.
-     *
-     * @param senderConfiguration SSL configuration instance.
-     * @param targetConfiguration target configuration.
-     */
-    public static void populateSSLConfiguration(SslConfiguration senderConfiguration,
-                                                TargetConfiguration targetConfiguration) throws AxisFault {
-
-        List<Parameter> clientParamList = new ArrayList<>();
-        NettyConfiguration globalConfig = NettyConfiguration.getInstance();
-        SecretResolver secretResolver = targetConfiguration.getConfigurationContext()
-                .getAxisConfiguration().getSecretResolver();
-
-        populateKeyStoreConfigs(senderConfiguration, secretResolver, globalConfig);
-
-        boolean disableCertValidation = globalConfig.getClientSSLValidateCert();
-        if (disableCertValidation) {
-            senderConfiguration.disableSsl();
-        } else {
-            populateTrustStoreConfigs(senderConfiguration, secretResolver, globalConfig);
-        }
-
-        // TODO: no need to have this if cert is disabled
-        populateProtocolConfigs(senderConfiguration, clientParamList, globalConfig);
-
-        populateCertValidationConfigs(senderConfiguration, globalConfig);
-
-        populateCiphersConfigs(clientParamList, globalConfig);
-
-        populateTimeoutConfigs(senderConfiguration, globalConfig);
-
-//        populateHostnameVerifierConfigs
-
-        if (!clientParamList.isEmpty()) {
-            senderConfiguration.setParameters(clientParamList);
-        }
-    }
-
-    public static void populateKeyStoreConfigs(SslConfiguration sslConfiguration, SecretResolver secretResolver,
-                                               NettyConfiguration globalConfig) throws AxisFault {
-
-        String location = globalConfig.getClientSSLKeystoreLocation();
-        String type = globalConfig.getClientSSLKeystoreType();
-        String storePassword = globalConfig.getClientSSLKeystorePassword();
-        String keyPassword = globalConfig.getClientSSLKeystoreKeyPassword();
-
-        if (Objects.isNull(location) || location.isEmpty()) {
-            throw new AxisFault("KeyStore file location must be provided for secure connection");
-        }
-
-        if (Objects.isNull(storePassword)) {
-            throw new AxisFault("KeyStore password must be provided for secure connection");
-        }
-        if (Objects.isNull(keyPassword)) {
-            throw new AxisFault("Cannot proceed because KeyPassword element is missing in KeyStore");
-        }
-        storePassword = MiscellaneousUtil.resolve(storePassword, secretResolver);
-        keyPassword = MiscellaneousUtil.resolve(keyPassword, secretResolver);
-
-        sslConfiguration.setKeyStoreFile(location);
-        sslConfiguration.setKeyStorePass(storePassword);
-        sslConfiguration.setCertPass(keyPassword);
-        sslConfiguration.setTLSStoreType(type);
-    }
-
-    public static void populateTrustStoreConfigs(SslConfiguration sslConfiguration, SecretResolver secretResolver,
-                                                 NettyConfiguration globalConfig) throws AxisFault {
-
-        String location = globalConfig.getClientSSLTruststoreLocation();
-        String type = globalConfig.getClientSSLTruststoreType();
-        String storePassword = globalConfig.getClientSSLTruststorePassword();
-        if (Objects.isNull(storePassword)) {
-            throw new AxisFault("Cannot proceed because Password element is missing in TrustStore");
-        }
-        storePassword = MiscellaneousUtil.resolve(storePassword, secretResolver);
-
-        sslConfiguration.setTrustStoreFile(location);
-        sslConfiguration.setTrustStorePass(storePassword);
-        // TODO: need to edit the transport-http to have a type for truststore - verified from bhashinee
-    }
-
-    private static void populateProtocolConfigs(SslConfiguration sslConfiguration, List<Parameter> paramList,
-                                                NettyConfiguration globalConfig) {
-
-        String configuredHttpsProtocols = globalConfig.getClientSSLHttpsProtocols().replaceAll("\\s", "");
-
-        if (!configuredHttpsProtocols.isEmpty()) {
-            Parameter serverProtocols = new Parameter("sslEnabledProtocols", configuredHttpsProtocols);
-            paramList.add(serverProtocols);
-        }
-
-        String sslProtocol = globalConfig.getClientSSLProtocol();
-        if (Objects.isNull(sslProtocol) || sslProtocol.isEmpty()) {
-            sslProtocol = "TLS";
-        }
-        sslConfiguration.setSSLProtocol(sslProtocol);
-    }
-
-    public static void populateCertValidationConfigs(SslConfiguration sslConfiguration,
-                                                     NettyConfiguration globalConfig) {
-
-
-        boolean certRevocationVerifierEnabled = globalConfig.getClientSSLCertificateRevocationVerifierEnabled();
-
-        if (certRevocationVerifierEnabled) {
-            sslConfiguration.setValidateCertEnabled(true);
-            String cacheSizeString = globalConfig.getClientSSLCertificateRevocationVerifierCacheSize();
-            String cacheDelayString = globalConfig.getClientSSLCertificateRevocationVerifierCacheDelay();
-            Integer cacheSize = null;
-            Integer cacheDelay = null;
-            try {
-                cacheSize = new Integer(cacheSizeString);
-                cacheDelay = new Integer(cacheDelayString);
-            } catch (NumberFormatException e) {
-                // do nothing
-            }
-
-            if (Objects.nonNull(cacheDelay) && cacheDelay != 0) {
-                sslConfiguration.setCacheValidityPeriod(Math.toIntExact(cacheDelay));
-            }
-            if (Objects.nonNull(cacheSize) && cacheSize != 0) {
-                sslConfiguration.setCacheSize(Math.toIntExact(cacheSize));
-            }
-        }
-    }
-
-    private static void populateCiphersConfigs(List<Parameter> paramList, NettyConfiguration globalConfig) {
-
-        String preferredCiphers = globalConfig.getClientSSLPreferredCiphers().replaceAll("\\s", "");
-
-        if (!preferredCiphers.isEmpty()) {
-            Parameter serverParameters = new Parameter("ciphers", preferredCiphers);
-            paramList.add(serverParameters);
-        }
-    }
-
-    public static void populateTimeoutConfigs(SslConfiguration sslConfiguration, NettyConfiguration globalConfig) {
-
-        int sessionTimeout = globalConfig.getClientSSLSessionTimeout();
-        int handshakeTimeout = globalConfig.getClientSSLHandshakeTimeout();
-        if (sessionTimeout > 0) {
-            try {
-                sslConfiguration.setSslSessionTimeOut(sessionTimeout);
-            } catch (NumberFormatException e) {
-                LOG.warn("Invalid number found for ssl sessionTimeout : " + sessionTimeout
-                        + ". Hence, using the default value of 86400s/24h");
-            }
-        }
-        if (handshakeTimeout > 0) {
-            try {
-                sslConfiguration.setSslHandshakeTimeOut(handshakeTimeout);
-            } catch (NumberFormatException e) {
-                LOG.warn("Invalid number found for ssl handshakeTimeout : " + handshakeTimeout +
-                        ". Hence, using the default value of 10s");
-            }
-        }
-    }
-
-    public static void populateHostnameVerifierConfigs(SslConfiguration sslConfiguration,
-                                                       NettyConfiguration globalConfig) throws AxisFault {
-        // TODO: verify from Bhashinee
-        String hostNameVerificationEnabled = globalConfig.getClientSSLHostnameVerifier();
-//        sslConfiguration.setHostNameVerificationEnabled(hostNameVerificationEnabled);
-    }
-
-    }
+}

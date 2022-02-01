@@ -63,15 +63,4 @@ public interface HttpGetRequestProcessor {
                  OutputStream os,
                  boolean isRestDispatching);
 
-    /**
-     * Process the HTTP GET request.
-     *
-     * @param inboundCarbonMsg  inbound HttpCarbonMessage
-     * @param messageContext    The MessageContext
-     * @param isRestDispatching Rest dispatching
-     */
-    void process(HttpCarbonMessage inboundCarbonMsg,
-                 MessageContext messageContext,
-                 boolean isRestDispatching);
-
 }

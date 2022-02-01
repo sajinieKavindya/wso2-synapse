@@ -67,7 +67,6 @@ public class TargetErrorHandler {
                     MessageContext faultMessageContext =
                             MessageContextBuilder.createFaultMessageContext(msgContext, axisFault);
 
-
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("Sending Fault for Request with Message ID : " + msgContext.getMessageID());
                     }

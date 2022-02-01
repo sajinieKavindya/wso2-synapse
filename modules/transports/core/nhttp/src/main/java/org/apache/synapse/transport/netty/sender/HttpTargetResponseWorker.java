@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -32,10 +32,10 @@ import org.apache.axis2.engine.AxisEngine;
 import org.apache.axis2.engine.MessageReceiver;
 import org.apache.axis2.util.JavaUtils;
 import org.apache.axis2.wsdl.WSDLConstants;
-import org.apache.http.HttpStatus;
-import org.apache.http.protocol.HTTP;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpStatus;
+import org.apache.http.protocol.HTTP;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.netty.util.HttpUtils;
@@ -45,9 +45,9 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeMap;
 
 /**
  * {@code HttpTargetResponseWorker} is the Thread which does the response processing.
@@ -71,42 +71,71 @@ public class HttpTargetResponseWorker implements Runnable {
     @Override
     public void run() {
 
-        int statusCode = httpResponse.getHttpStatusCode();
-
-        if (is1xxInformationalResponse(statusCode)) {
-            if (LOG.isDebugEnabled()) {
-                // TODO: edit the log
-                LOG.debug("Received a 100 Continue response.");
-            }
-            // Ignore 1xx response
+        if (handleResponseFlow(httpResponse.getHttpStatusCode())) {
             return;
         }
+
+        MessageContext responseMsgCtx;
+        try {
+            responseMsgCtx = createResponseMessageContext();
+        } catch (AxisFault ex) {
+            return;
+        }
+
+        handleLocationHeader(responseMsgCtx);
+
+        try {
+            populateProperties(responseMsgCtx);
+        } catch (AxisFault e) {
+            LOG.error("Error occurred while setting the SOAP envelope to the response message context", e);
+            cleanup();
+            return;
+        }
+
+        try {
+            // Handover message to the axis engine for processing
+            AxisEngine.receive(responseMsgCtx);
+        } catch (AxisFault ex) {
+            LOG.error("Error occurred while processing response message through Axis2", ex);
+            String errorMessage = "Fault processing response message through Axis2: " + ex.getMessage();
+            responseMsgCtx.setProperty(
+                    NhttpConstants.SENDING_FAULT, Boolean.TRUE);
+            responseMsgCtx.setProperty(
+                    NhttpConstants.ERROR_CODE, NhttpConstants.RESPONSE_PROCESSING_FAILURE);
+            responseMsgCtx.setProperty(
+                    NhttpConstants.ERROR_MESSAGE, errorMessage.split("\n")[0]);
+            responseMsgCtx.setProperty(
+                    NhttpConstants.ERROR_DETAIL, JavaUtils.stackToString(ex));
+            responseMsgCtx.setProperty(
+                    NhttpConstants.ERROR_EXCEPTION, ex);
+            try {
+                responseMsgCtx.getAxisOperation().getMessageReceiver().receive(responseMsgCtx);
+            } catch (AxisFault axisFault) {
+                LOG.error("Error occurred while processing fault response message through Axis2", ex);
+            }
+        } finally {
+            cleanup();
+        }
+    }
+
+    private MessageContext createResponseMessageContext() throws AxisFault {
 
         MessageContext responseMsgCtx;
         try {
             responseMsgCtx = requestMsgCtx.getOperationContext().getMessageContext(WSDL2Constants.MESSAGE_LABEL_IN);
         } catch (AxisFault ex) {
             LOG.error("Error getting the response message context from the operation context", ex);
-            return;
-        }
-
-        try {
-            if (is202Response(statusCode) && handle202(requestMsgCtx, responseMsgCtx)) {
-                return;
-            }
-        } catch (AxisFault ex) {
-            LOG.error("Error while handling the 202 response. ", ex);
-            cleanup();
-            return;
+            throw ex;
         }
 
         if (Objects.isNull(responseMsgCtx)) {
             if (requestMsgCtx.getOperationContext().isComplete()) {
+                String msg = "Error getting IN message context from the operation context. "
+                        + "Possibly an RM terminate sequence message";
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("Error getting IN message context from the operation context. "
-                            + "Possibly an RM terminate sequence message");
+                    LOG.debug(msg);
                 }
-                return;
+                throw new AxisFault(msg);
             }
             responseMsgCtx = new MessageContext();
             responseMsgCtx.setOperationContext(requestMsgCtx.getOperationContext());
@@ -114,34 +143,28 @@ public class HttpTargetResponseWorker implements Runnable {
             // fix for RM to work because of a soapAction and wsaAction conflict
             responseMsgCtx.setSoapAction("");
         }
+        return responseMsgCtx;
+    }
 
-        handleLocationHeader(responseMsgCtx);
+    private boolean handleResponseFlow(int statusCode) {
+
+        if (is1xxInformationalResponse(statusCode)) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Received a " + statusCode + " informational response.");
+            }
+            return true;
+        }
 
         try {
-            populateProperties(responseMsgCtx);
-            try {
-                // Handover message to the axis engine for processing
-                AxisEngine.receive(responseMsgCtx);
-            } catch (AxisFault ex) {
-                LOG.error("Error occurred while processing response message through Axis2", ex);
-                String errorMessage = "Fault processing response message through Axis2: " + ex.getMessage();
-                responseMsgCtx.setProperty(
-                        NhttpConstants.SENDING_FAULT, Boolean.TRUE);
-                responseMsgCtx.setProperty(
-                        NhttpConstants.ERROR_CODE, NhttpConstants.RESPONSE_PROCESSING_FAILURE);
-                responseMsgCtx.setProperty(
-                        NhttpConstants.ERROR_MESSAGE, errorMessage.split("\n")[0]);
-                responseMsgCtx.setProperty(
-                        NhttpConstants.ERROR_DETAIL, JavaUtils.stackToString(ex));
-                responseMsgCtx.setProperty(
-                        NhttpConstants.ERROR_EXCEPTION, ex);
-                responseMsgCtx.getAxisOperation().getMessageReceiver().receive(responseMsgCtx);
+            if (is202Response(statusCode) && handle202(requestMsgCtx)) {
+                return true;
             }
-        } catch (AxisFault e) {
-            LOG.error("Error occurred while setting the SOAP envelope to the response message context", e);
-        } finally {
+        } catch (AxisFault ex) {
+            LOG.error("Error while handling the 202 response. ", ex);
             cleanup();
+            return true;
         }
+        return false;
     }
 
     /**
@@ -183,8 +206,7 @@ public class HttpTargetResponseWorker implements Runnable {
                 requestMsgCtx.getProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION));
 
         // Set any transport headers received
-        // TODO: make this hashmap
-        Map<String, String> headers = new TreeMap<>(String::compareToIgnoreCase);
+        Map<String, String> headers = new HashMap<>();
         httpResponse.getHeaders().forEach(entry -> headers.put(entry.getKey(), entry.getValue()));
         responseMsgCtx.setProperty(MessageContext.TRANSPORT_HEADERS, headers);
 
@@ -263,7 +285,7 @@ public class HttpTargetResponseWorker implements Runnable {
     }
 
     private boolean checkIfResponseHaveBodyBasedOnContentLenAndTransferEncodingHeaders(HttpHeaders headers,
-                                                                                      MessageContext responseMsgCtx) {
+                                                                                       MessageContext responseMsgCtx) {
 
         // TODO: check in case insensitive manner
         String contentLengthHeader = headers.get(HTTP.CONTENT_LEN);
@@ -278,7 +300,7 @@ public class HttpTargetResponseWorker implements Runnable {
         return true;
     }
 
-    private boolean handle202(MessageContext requestMsgContext, MessageContext responseMsgContext) throws AxisFault {
+    private boolean handle202(MessageContext requestMsgContext) throws AxisFault {
 
         if (requestMsgContext.isPropertyTrue(BridgeConstants.IGNORE_SC_ACCEPTED)) {
             // We should not further process this 202 response - Ignore it
@@ -286,6 +308,8 @@ public class HttpTargetResponseWorker implements Runnable {
         }
 
         MessageReceiver mr = requestMsgContext.getAxisOperation().getMessageReceiver();
+        MessageContext responseMsgContext = requestMsgCtx.getOperationContext()
+                .getMessageContext(WSDL2Constants.MESSAGE_LABEL_IN);
         if (responseMsgContext == null || requestMsgContext.getOptions().isUseSeparateListener()) {
             // Most probably a response from a dual channel invocation
             // Inject directly into the SynapseCallbackReceiver
@@ -334,23 +358,28 @@ public class HttpTargetResponseWorker implements Runnable {
     }
 
     private boolean is1xxInformationalResponse(int statusCode) {
+
         return statusCode / 100 == 1;
     }
 
     private boolean is202Response(int statusCode) {
+
         return statusCode == HttpStatus.SC_ACCEPTED;
     }
 
     private boolean is3xxRedirectionResponse(int statusCode) {
+
         return statusCode == HttpStatus.SC_MOVED_TEMPORARILY || statusCode == HttpStatus.SC_MOVED_PERMANENTLY
                 || statusCode == HttpStatus.SC_SEE_OTHER || statusCode == HttpStatus.SC_TEMPORARY_REDIRECT;
     }
 
     private boolean is201CreatedResponse(int statusCode) {
+
         return statusCode == HttpStatus.SC_CREATED;
     }
 
     private boolean isErrorResponse(int statusCode) {
+
         return statusCode >= 400;
     }
 

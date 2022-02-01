@@ -25,7 +25,6 @@ import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.context.SessionContext;
 import org.apache.axis2.description.TransportInDescription;
 import org.apache.axis2.transport.TransportListener;
-import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
@@ -51,7 +50,6 @@ public class Axis2HttpTransportListener implements TransportListener {
 
     private ServerConnector serverConnector;
     private HttpWsConnectorFactory httpWsConnectorFactory;
-    private WorkerPool workerPool;
     protected SourceConfiguration sourceConfiguration = null;
     protected List<MessagingHandler> messagingHandlers;
     protected TransportInDescription transportInDescription;
@@ -60,13 +58,15 @@ public class Axis2HttpTransportListener implements TransportListener {
     public void init(ConfigurationContext configurationContext, TransportInDescription transportInDescription)
             throws AxisFault {
 
-        this.transportInDescription = transportInDescription;
         Scheme scheme = initScheme();
+        this.transportInDescription = transportInDescription;
+
+        // build source configuration
         sourceConfiguration = new SourceConfiguration(configurationContext, transportInDescription, scheme,
-                messagingHandlers, workerPool);
+                messagingHandlers);
         sourceConfiguration.build();
 
-        sourceConfiguration.getHttpGetRequestProcessor().init(sourceConfiguration.getConfigurationContext(), null);
+        sourceConfiguration.getHttpGetRequestProcessor().init(sourceConfiguration.getConfigurationContext());
 
         ListenerConfiguration listenerConfiguration = initListenerConfiguration();
 
@@ -125,11 +125,6 @@ public class Axis2HttpTransportListener implements TransportListener {
     protected ListenerConfiguration initListenerConfiguration()
             throws AxisFault {
         return RequestResponseUtils.getListenerConfig(sourceConfiguration, false);
-    }
-
-    public void setWorkerPool(WorkerPool workerPool) {
-
-        this.workerPool = workerPool;
     }
 
     public void setMessagingHandlers(List<MessagingHandler> messagingHandlers) {

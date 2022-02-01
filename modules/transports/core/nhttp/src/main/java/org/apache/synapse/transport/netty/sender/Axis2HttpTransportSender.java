@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -30,7 +30,6 @@ import org.apache.axis2.handlers.AbstractHandler;
 import org.apache.axis2.transport.TransportSender;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
 import org.apache.synapse.transport.netty.util.HttpUtils;
@@ -38,13 +37,14 @@ import org.apache.synapse.transport.netty.util.RequestResponseUtils;
 import org.wso2.transport.http.netty.contract.HttpClientConnector;
 import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contractimpl.DefaultHttpWsConnectorFactory;
+import org.wso2.transport.http.netty.contractimpl.sender.channel.BootstrapConfiguration;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.ConnectionManager;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.List;
+import java.util.HashMap;
 
 /**
  * {@code Axis2HttpTransportSender} receives the outgoing axis2 {@code MessageContext}, convert it into a
@@ -64,18 +64,9 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
      */
     HttpWsConnectorFactory httpWsConnectorFactory;
 
-    private List<MessagingHandler> messagingHandlers;
+    protected TargetConfiguration targetConfiguration;
 
-    private TargetConfiguration targetConfiguration;
-
-    public Axis2HttpTransportSender() {
-
-    }
-
-    public Axis2HttpTransportSender(List<MessagingHandler> messagingHandlers) {
-
-        this.messagingHandlers = messagingHandlers;
-    }
+    BootstrapConfiguration bootstrapConfiguration;
 
     @Override
     public void init(ConfigurationContext configurationContext, TransportOutDescription transportOutDescription)
@@ -83,19 +74,20 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 
         httpWsConnectorFactory = new DefaultHttpWsConnectorFactory();
         connectionManager = HttpUtils.getConnectionManager();
-        targetConfiguration = new TargetConfiguration(configurationContext, transportOutDescription, messagingHandlers);
+        bootstrapConfiguration = new BootstrapConfiguration(new HashMap<>());
+        targetConfiguration = new TargetConfiguration(configurationContext, transportOutDescription);
         targetConfiguration.build();
     }
 
     @Override
     public InvocationResponse invoke(MessageContext msgCtx) throws AxisFault {
 
-        if (AddressingHelper.isReplyRedirected(msgCtx) && !msgCtx.getReplyTo().hasNoneAddress()) {
+        if (AddressingHelper.isReplyRedirected(msgCtx)) {
             msgCtx.setProperty(BridgeConstants.IGNORE_SC_ACCEPTED, BridgeConstants.VALUE_TRUE);
         }
 
         EndpointReference destinationEPR = RequestResponseUtils.getDestinationEPR(msgCtx);
-        if (isBackendRequest(destinationEPR)) {
+        if (isRequestToBackend(destinationEPR)) {
             try {
                 URL destinationURL = new URL(destinationEPR.getAddress());
                 sendRequestToBackendService(msgCtx, destinationURL);
@@ -125,7 +117,8 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         return InvocationResponse.CONTINUE;
     }
 
-    private boolean isBackendRequest(EndpointReference destinationEPR) throws AxisFault {
+    private boolean isRequestToBackend(EndpointReference destinationEPR) throws AxisFault {
+
         if (destinationEPR != null) {
             if (destinationEPR.hasNoneAddress()) {
                 handleException("Cannot send the message to " + AddressingConstants.Final.WSA_NONE_URI);
@@ -160,7 +153,7 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
         HttpCarbonMessage outboundRequestMsg = TargetRequestHandler.createOutboundRequestMsg(url, msgCtx,
                 targetConfiguration);
         HttpClientConnector clientConnector = TargetRequestHandler.createHttpClient(url, msgCtx,
-                httpWsConnectorFactory, connectionManager, targetConfiguration);
+                httpWsConnectorFactory, connectionManager, bootstrapConfiguration, targetConfiguration);
         TargetRequestHandler.sendRequest(clientConnector, outboundRequestMsg, msgCtx, targetConfiguration);
     }
 
@@ -184,15 +177,5 @@ public class Axis2HttpTransportSender extends AbstractHandler implements Transpo
 
         LOG.error(msg);
         throw new AxisFault(msg);
-    }
-
-    public List<MessagingHandler> getMessagingHandlers() {
-
-        return messagingHandlers;
-    }
-
-    public void setMessagingHandlers(List<MessagingHandler> messagingHandlers) {
-
-        this.messagingHandlers = messagingHandlers;
     }
 }

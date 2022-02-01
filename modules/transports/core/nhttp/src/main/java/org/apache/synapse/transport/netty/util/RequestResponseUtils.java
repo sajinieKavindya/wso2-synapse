@@ -42,30 +42,21 @@ import org.apache.synapse.transport.netty.config.BaseConfiguration;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.apache.synapse.transport.nhttp.HttpCoreRequestResponseTransport;
-import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.nhttp.util.SecureVaultValueReader;
-import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.wso2.securevault.SecretResolver;
-import org.wso2.transport.http.netty.contract.HttpResponseFuture;
 import org.wso2.transport.http.netty.contract.config.InboundMsgSizeValidationConfig;
 import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
 import org.wso2.transport.http.netty.contract.config.SslConfiguration;
-import org.wso2.transport.http.netty.contract.exceptions.ServerConnectorException;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeMap;
 import javax.xml.namespace.QName;
 
 /**
@@ -88,32 +79,32 @@ public class RequestResponseUtils {
 
         MessageContext msgCtx = new MessageContext();
 
+        String transportName;
+        if (sourceConfiguration.getScheme().isSSL()) {
+            transportName = BridgeConstants.TRANSPORT_NAME_HTTP;
+        } else {
+            transportName = BridgeConstants.TRANSPORT_NAME_HTTPS;
+        }
+        ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
+        msgCtx.setConfigurationContext(configurationContext);
+        msgCtx.setTransportOut(configurationContext.getAxisConfiguration().getTransportOut(transportName));
+        msgCtx.setTransportIn(configurationContext.getAxisConfiguration().getTransportIn(transportName));
+        msgCtx.setIncomingTransportName(transportName);
+        msgCtx.setServerSide(true);
+
         //TODO: once the correlation id support is brought, the correlationID should be set as the messageID.
         // Refer to https://github.com/wso2-support/wso2-synapse/commit/2c86e14151d48ae3bb814be19b874800bd7468e5
         msgCtx.setMessageID(UIDGenerator.generateURNString());
 
         //TODO: set correlation id here
+
         msgCtx.setProperty(BaseConstants.INTERNAL_TRANSACTION_COUNTED, incomingCarbonMsg.getSourceContext().channel()
                 .attr(AttributeKey.valueOf(BaseConstants.INTERNAL_TRANSACTION_COUNTED)).get());
 
-        ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
-        msgCtx.setConfigurationContext(configurationContext);
-
-        String transportName;
-        if (sourceConfiguration.getScheme().isSSL()) {
-            // TODO: decide later
-            transportName = BridgeConstants.PROTOCOL_HTTPS;
-        } else {
-            transportName = BridgeConstants.PROTOCOL_HTTP;
-        }
-        msgCtx.setTransportOut(configurationContext.getAxisConfiguration().getTransportOut(transportName));
-        msgCtx.setTransportIn(configurationContext.getAxisConfiguration().getTransportIn(transportName));
-        msgCtx.setIncomingTransportName(transportName);
-
-        msgCtx.setServerSide(true);
-        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL,
-                incomingCarbonMsg.getProperty(BridgeConstants.TO));
+        msgCtx.setProperty(Constants.Configuration.TRANSPORT_IN_URL, incomingCarbonMsg.getProperty(BridgeConstants.TO));
         msgCtx.setProperty(MessageContext.CLIENT_API_NON_BLOCKING, Boolean.FALSE);
+        msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL, new HttpCoreRequestResponseTransport(msgCtx));
+        msgCtx.setProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION, sourceConfiguration);
 
         // Following section is required for throttling to work
         msgCtx.setProperty(MessageContext.REMOTE_ADDR, incomingCarbonMsg.getProperty(
@@ -122,12 +113,8 @@ public class RequestResponseUtils {
                 incomingCarbonMsg.getProperty(org.wso2.transport.http.netty.contract.Constants.ORIGIN_HOST));
 
         // http transport header names are case insensitive
-        Map<String, String> headers = new TreeMap<>(String::compareToIgnoreCase);
+        Map<String, String> headers = new HashMap<>();
         msgCtx.setProperty(MessageContext.TRANSPORT_HEADERS, headers);
-
-        msgCtx.setProperty(RequestResponseTransport.TRANSPORT_CONTROL, new HttpCoreRequestResponseTransport(msgCtx));
-
-        msgCtx.setProperty(BridgeConstants.HTTP_SOURCE_CONFIGURATION, sourceConfiguration);
 
         // Set the original incoming carbon message as a property
         msgCtx.setProperty(BridgeConstants.HTTP_CARBON_MESSAGE, incomingCarbonMsg);
@@ -173,8 +160,6 @@ public class RequestResponseUtils {
         }
         return outboundMsgDataStreamer;
     }
-
-
 
     /**
      * Check whether the content type is multipart or not.
@@ -258,16 +243,11 @@ public class RequestResponseUtils {
      * @param contentType Content-Type header
      * @return whether the HTTP request is REST or not
      */
-    public static boolean isRESTRequest(String contentType) {
+    public static boolean isRESTSupportedMediaType(String contentType) {
 
         // TODO: verify for text/xml
-        return contentType != null && (contentType.contains(HTTPConstants.MEDIA_TYPE_APPLICATION_XML)
-                || contentType.contains(HTTPConstants.MEDIA_TYPE_X_WWW_FORM)
-                || contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
-                || contentType.contains(HTTPConstants.MEDIA_TYPE_APPLICATION_JSON)
-                || contentType.contains(HTTPConstants.MEDIA_TYPE_APPLICATION_JWT)
-                || (!contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE)
-                && !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE)));
+        return contentType != null && !contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE)
+                && !contentType.contains(SOAP12Constants.SOAP_12_CONTENT_TYPE);
     }
 
     /**
@@ -286,7 +266,7 @@ public class RequestResponseUtils {
                 TransportUtils.processContentTypeForAction(contentType, msgContext);
             } else if (contentType.contains(SOAP11Constants.SOAP_11_CONTENT_TYPE)) {
                 soapVersion = 1;
-            } else if (isRESTRequest(contentType)) {
+            } else if (isRESTSupportedMediaType(contentType)) {
                 soapVersion = 1;
             }
         }
@@ -302,10 +282,10 @@ public class RequestResponseUtils {
      * @param soapActionHeader SOAPAction header
      * @return whether the request should be considered as REST
      */
-    public static boolean isDoingREST(MessageContext msgContext, String contentType, int soapVersion,
-                                      String soapActionHeader) {
+    public static boolean isRESTRequest(MessageContext msgContext, String contentType, int soapVersion,
+                                        String soapActionHeader) {
 
-        if (isRESTRequest(contentType)) {
+        if (isRESTSupportedMediaType(contentType)) {
             return true;
         }
         if (soapVersion == 1) {
@@ -334,57 +314,6 @@ public class RequestResponseUtils {
             return msgContext.getTo();
         }
         return null;
-    }
-
-    private URL getDestinationURL(MessageContext msgContext) throws AxisFault {
-
-        EndpointReference endpointReference = getDestinationEPR(msgContext);
-        if (Objects.isNull(endpointReference)) {
-            return null;
-        }
-        try {
-            return new URL(endpointReference.getAddress());
-        } catch (MalformedURLException e) {
-            throw new AxisFault("Malformed Endpoint url found in the target EPR", e);
-        }
-    }
-
-    public static void addTransportHeaders(MessageContext msgCtx, HttpCarbonMessage outboundRequest) {
-
-        Map headers = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
-        if (headers != null) {
-            for (Object entryObj : headers.entrySet()) {
-                Map.Entry entry = (Map.Entry) entryObj;
-                if (entry.getValue() != null && entry.getKey() instanceof String &&
-                        entry.getValue() instanceof String) {
-                    outboundRequest.setHeader((String) entry.getKey(), (String) entry.getValue());
-                }
-            }
-        }
-    }
-
-    public static void addExcessHeaders(MessageContext msgCtx, HttpCarbonMessage outboundHttpCarbonMessage) {
-
-        Map excessHeaders = (Map) msgCtx.getProperty(NhttpConstants.EXCESS_TRANSPORT_HEADERS);
-        if (excessHeaders != null) {
-            for (Iterator iterator = excessHeaders.keySet().iterator(); iterator.hasNext(); ) {
-                String key = (String) iterator.next();
-                for (String excessVal : (Collection<String>) excessHeaders.get(key)) {
-                    outboundHttpCarbonMessage.setHeader(key, excessVal);
-                }
-            }
-        }
-    }
-
-    public static boolean enableChunking(MessageContext msgContext) {
-
-        if (msgContext.isPropertyTrue(NhttpConstants.FORCE_HTTP_CONTENT_LENGTH)) {
-            return false;
-        } else {
-            String disableChunking = (String) msgContext.getProperty(PassThroughConstants.DISABLE_CHUNKING);
-            return !Constants.VALUE_TRUE.equals(disableChunking)
-                    && !Constants.VALUE_TRUE.equals(msgContext.getProperty(PassThroughConstants.FORCE_HTTP_1_0));
-        }
     }
 
     /**
@@ -451,7 +380,6 @@ public class RequestResponseUtils {
 
         List<org.wso2.transport.http.netty.contract.config.Parameter> serverParamList = new ArrayList<>();
         listenerConfiguration.setScheme(BridgeConstants.PROTOCOL_HTTPS);
-        // TODO: evaluate shareSession param. Bhashinee
 
         // evaluate keystore field
         Parameter keyParam = transportIn.getParameter(BridgeConstants.KEY_STORE);
@@ -477,7 +405,8 @@ public class RequestResponseUtils {
         Parameter httpsProtocolsParam = transportIn.getParameter(BridgeConstants.HTTPS_PROTOCOL);
         OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
         Parameter sslParameter = transportIn.getParameter(BridgeConstants.SSL_PROTOCOL);
-        String sslProtocol = sslParameter != null ? sslParameter.getValue().toString() : "TLS";
+        String sslProtocol = sslParameter != null
+                ? sslParameter.getValue().toString() : BridgeConstants.DEFAULT_SSL_PROTOCOL;
         populateProtocolConfigs(httpsProtocolsEl, sslProtocol, listenerConfiguration, serverParamList);
 
         // evaluate PreferredCiphers field
@@ -497,7 +426,7 @@ public class RequestResponseUtils {
         String sessionTimeoutEl = sessionTimeoutParam != null ? sessionTimeoutParam.getValue().toString() : null;
         String handshakeTimeoutEl = handshakeTimeoutParam != null
                 ? handshakeTimeoutParam.getParameterElement().toString() : null;
-        populateCommonConfigs(sessionTimeoutEl, handshakeTimeoutEl, listenerConfiguration);
+        populateTimeoutConfigs(sessionTimeoutEl, handshakeTimeoutEl, listenerConfiguration);
 
         if (!serverParamList.isEmpty()) {
             listenerConfiguration.setParameters(serverParamList);
@@ -520,7 +449,6 @@ public class RequestResponseUtils {
             if (Objects.isNull(location) || location.isEmpty()) {
                 throw new AxisFault("KeyStore file location must be provided for secure connection");
             }
-
             if (storePasswordEl == null) {
                 throw new AxisFault("KeyStore password must be provided for secure connection");
             }
@@ -541,7 +469,7 @@ public class RequestResponseUtils {
                                                  SecretResolver secretResolver) throws AxisFault {
 
         String location = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.STORE_LOCATION);
-        // TODO: need to edit the transport-http to have a type for truststore - verified from bhashinee
+        // TODO: need to edit the transport-http to have a type for truststore
         String type = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.TYPE);
         OMElement storePasswordEl = trustStoreEl.getFirstChildWithName(new QName(BridgeConstants.PASSWORD));
         if (storePasswordEl == null) {
@@ -581,8 +509,7 @@ public class RequestResponseUtils {
             if (maxEntityBodySize >= 0) {
                 sizeValidationConfig.setMaxEntityBodySize(maxEntityBodySize);
             } else {
-                throw new AxisFault(
-                        "Invalid configuration found for maxEntityBodySize : " + maxEntityBodySize);
+                throw new AxisFault("Invalid configuration found for maxEntityBodySize : " + maxEntityBodySize);
             }
         }
     }
@@ -598,15 +525,15 @@ public class RequestResponseUtils {
         return value;
     }
 
-    public static void populateCertValidationConfigs(OMElement cvpEl, SslConfiguration sslConfiguration) {
+    private static void populateCertValidationConfigs(OMElement cvpEl, SslConfiguration sslConfiguration) {
 
         final String cvEnable = cvpEl != null ?
                 cvpEl.getAttribute(new QName("enable")).getAttributeValue() : null;
 
         if ("true".equalsIgnoreCase(cvEnable)) {
             sslConfiguration.setValidateCertEnabled(true);
-            String cacheSizeString = cvpEl.getFirstChildWithName(new QName("CacheSize")).getText();
-            String cacheDelayString = cvpEl.getFirstChildWithName(new QName("CacheDelay")).getText();
+            String cacheSizeString = cvpEl.getFirstChildWithName(new QName(BridgeConstants.CACHE_SIZE)).getText();
+            String cacheDelayString = cvpEl.getFirstChildWithName(new QName(BridgeConstants.CACHE_DELAY)).getText();
             Integer cacheSize = null;
             Integer cacheDelay = null;
             try {
@@ -625,35 +552,38 @@ public class RequestResponseUtils {
         }
     }
 
-    public static void populateCommonConfigs(String sessionTimeout, String handshakeTimeout,
-                                             SslConfiguration sslConfiguration) throws AxisFault {
+    private static void populateTimeoutConfigs(String sessionTimeoutStr, String handshakeTimeoutStr,
+                                               SslConfiguration sslConfiguration) {
 
-        if (Objects.nonNull(sessionTimeout) && !sessionTimeout.isEmpty()) {
+        if (Objects.nonNull(sessionTimeoutStr) && !sessionTimeoutStr.isEmpty()) {
             try {
-                sslConfiguration.setSslSessionTimeOut(new Integer(sessionTimeout));
+                int sessionTimeout = new Integer(sessionTimeoutStr);
+                if (sessionTimeout > 0) {
+                    sslConfiguration.setSslSessionTimeOut(sessionTimeout);
+                } else {
+                    LOG.warn("SessionTimeout should be a valid positive number. But found : " + sessionTimeoutStr
+                            + ". Hence, using the default value of 86400s/24h");
+                }
             } catch (NumberFormatException e) {
-                throw new AxisFault("Invalid number found for ssl sessionTimeout : " + sessionTimeout);
+                LOG.warn("Invalid number found for SSL SessionTimeout : " + sessionTimeoutStr
+                        + ". Hence, using the default value of 86400s/24h");
             }
-        } else {
-            // default value
         }
 
-        if (Objects.nonNull(handshakeTimeout) && !handshakeTimeout.isEmpty()) {
+        if (Objects.nonNull(handshakeTimeoutStr) && !handshakeTimeoutStr.isEmpty()) {
             try {
-                sslConfiguration.setSslHandshakeTimeOut(new Integer(handshakeTimeout));
+                int handshakeTimeout = new Integer(handshakeTimeoutStr);
+                if (handshakeTimeout > 0) {
+                    sslConfiguration.setSslHandshakeTimeOut(handshakeTimeout);
+                } else {
+                    LOG.warn("HandshakeTimeout should be a valid positive number. But found : " + handshakeTimeoutStr
+                            + ". Hence, using the default value of 10s");
+                }
             } catch (NumberFormatException e) {
-                throw new AxisFault("Invalid number found for ssl handshakeTimeout : " + handshakeTimeout);
+                LOG.warn("Invalid number found for ssl handshakeTimeoutStr : " + handshakeTimeoutStr +
+                        ". Hence, using the default value of 10s");
             }
-        } else {
-            // default value
         }
-
-//        if (!(sslConfiguration instanceof ListenerConfiguration)) {
-//            boolean hostNameVerificationEnabled = secureSocket.getBooleanValue(
-//                    HttpConstants.SECURESOCKET_CONFIG_HOST_NAME_VERIFICATION_ENABLED);
-//            sslConfiguration.setHostNameVerificationEnabled(hostNameVerificationEnabled);
-//        }
-
     }
 
     private static void populateProtocolConfigs(
@@ -665,14 +595,14 @@ public class RequestResponseUtils {
 
             if (!configuredHttpsProtocols.isEmpty()) {
                 org.wso2.transport.http.netty.contract.config.Parameter serverProtocols
-                        = new org.wso2.transport.http.netty.contract.config.Parameter("sslEnabledProtocols",
-                        configuredHttpsProtocols);
+                        = new org.wso2.transport.http.netty.contract.config.Parameter(
+                        BridgeConstants.SSL_ENABLED_PROTOCOLS, configuredHttpsProtocols);
                 paramList.add(serverProtocols);
             }
         }
 
         if (Objects.isNull(sslProtocol) || sslProtocol.isEmpty()) {
-            sslProtocol = "TLS";
+            sslProtocol = BridgeConstants.DEFAULT_SSL_PROTOCOL;
         }
         sslConfiguration.setSSLProtocol(sslProtocol);
     }
@@ -685,7 +615,8 @@ public class RequestResponseUtils {
 
             if (!preferredCiphers.isEmpty()) {
                 org.wso2.transport.http.netty.contract.config.Parameter serverParameters
-                        = new org.wso2.transport.http.netty.contract.config.Parameter("ciphers", preferredCiphers);
+                        = new org.wso2.transport.http.netty.contract.config.Parameter(
+                        BridgeConstants.CIPHERS, preferredCiphers);
                 paramList.add(serverParameters);
             }
         }
@@ -693,39 +624,8 @@ public class RequestResponseUtils {
 
     public static String getListenerInterface(String host, int port) {
 
-        host = host != null ? host : "0.0.0.0";
+        host = host != null ? host : BridgeConstants.HTTP_DEFAULT_HOST;
         return host + ":" + port;
-    }
-
-    /**
-     * This method should never be called directly to send out responses for ballerina HTTP 1.1. Use
-     * PipeliningHandler's sendPipelinedResponse() method instead.
-     *
-     * @param requestMsg  Represent the request message
-     * @param responseMsg Represent the corresponding response
-     * @return HttpResponseFuture that represent the future results
-     */
-    public static HttpResponseFuture sendOutboundResponse(HttpCarbonMessage requestMsg,
-                                                          HttpCarbonMessage responseMsg) throws AxisFault {
-
-        HttpResponseFuture responseFuture;
-        try {
-            responseFuture = requestMsg.respond(responseMsg);
-        } catch (ServerConnectorException e) {
-            throw new AxisFault("Error occurred during response", e);
-        }
-        return responseFuture;
-    }
-
-    public static void closeMessageOutputStream(OutputStream messageOutputStream) {
-
-        try {
-            if (messageOutputStream != null) {
-                messageOutputStream.close();
-            }
-        } catch (IOException e) {
-            LOG.error("Couldn't close message output stream", e);
-        }
     }
 
     public static void handleException(String s, Exception e) throws AxisFault {

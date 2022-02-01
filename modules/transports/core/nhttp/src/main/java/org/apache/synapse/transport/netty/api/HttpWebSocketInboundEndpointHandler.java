@@ -60,10 +60,10 @@ public class HttpWebSocketInboundEndpointHandler {
     public static boolean startListener(ConfigurationContext configurationContext,
                                         HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig) {
 
-        // prepare Axis2HttpTransportListener
         Axis2HttpTransportListener transportListener = new Axis2HttpTransportListener();
 
-        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTP, httpWebSocketConfig, configurationContext);
+        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTP, httpWebSocketConfig,
+                configurationContext);
     }
 
     /**
@@ -78,61 +78,73 @@ public class HttpWebSocketInboundEndpointHandler {
 
         Axis2HttpTransportListener transportListener = new Axis2HttpSSLTransportListener();
 
-        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTPS, httpWebSocketConfig, configurationContext);
+        return startServer(transportListener, BridgeConstants.TRANSPORT_NAME_HTTPS, httpWebSocketConfig,
+                configurationContext);
     }
 
     private static boolean startServer(Axis2HttpTransportListener transportListener, String transportName,
                                        HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig,
                                        ConfigurationContext configurationContext) {
 
-        int port = httpWebSocketConfig.getPort();
-        String endpointName = httpWebSocketConfig.getEndpointName();
-
         TransportInDescription transportInDescription;
         try {
-            transportInDescription = generateTransportInDescription(transportName, transportListener,
+            // Generate the TransportInDescription and add it to the ConfigurationContext
+            transportInDescription = createTransportInDescription(transportName, transportListener,
                     httpWebSocketConfig);
+            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
         } catch (AxisFault e) {
-            LOG.error("Error occurred while generating TransportInDescription. Hence, couldn't"
-                    + " start the " + transportName + " transport listener for endpoint : " + endpointName
-                    + " on port " + port, e);
+            logStartupError(e, "Error occurred while generating TransportInDescription. Hence, ",
+                    httpWebSocketConfig, transportName);
             return false;
         }
 
         try {
-            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
+            // Initialize the Axis2HttpTransportListener and set MessagingHandlers
             transportListener.init(configurationContext, transportInDescription);
             transportListener.setMessagingHandlers(httpWebSocketConfig.getInboundEndpointHandlers());
         } catch (AxisFault e) {
-            LOG.error("Couldn't initialize the " + transportName + " transport listener for endpoint : "
-                    + endpointName + " on port " + port, e);
+            logStartupError(e, "Error occurred while initializing the " + transportName
+                    + " transport listener. Hence, ", httpWebSocketConfig, transportName);
             return false;
         }
 
         try {
             transportListener.start();
-            transportListenerMap.put(port, transportListener);
+            // If the transport it started successfully, store it in the transportListenerMap against the port. This
+            // map will be used when stopping the listener.
+            transportListenerMap.put(httpWebSocketConfig.getPort(), transportListener);
         } catch (AxisFault e) {
-            LOG.error("Couldn't start the " + transportName + " transport listener for endpoint : "
-                    + endpointName + " on port " + port, e);
+            logStartupError(e, "Error occurred while generating TransportInDescription. Hence, ",
+                    httpWebSocketConfig, transportName);
             return false;
         }
         return true;
     }
 
-    private static TransportInDescription generateTransportInDescription(String transportName,
-                                                                         TransportListener transportListener,
-                                                                         HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig)
+    private static void logStartupError(AxisFault e, String msg,
+                                        HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig,
+                                        String transportName) {
+
+        LOG.error(msg + " Could not start the " + transportName + " transport listener for endpoint : "
+                + httpWebSocketConfig.getEndpointName() + " on port " + httpWebSocketConfig.getPort(), e);
+    }
+
+    private static TransportInDescription createTransportInDescription(
+            String transportName, TransportListener transportListener,
+            HttpWebSocketInboundEndpointConfiguration httpWebSocketConfig)
             throws AxisFault {
 
         TransportInDescription transportInDescription = new TransportInDescription(transportName);
         transportInDescription.setReceiver(transportListener);
 
         // populate parameters
-        addParameter(transportInDescription, TransportListener.PARAM_PORT, httpWebSocketConfig.getPort());
-        addParameter(transportInDescription, "protocolVersion", httpWebSocketConfig.getHttpProtocolVersion());
+        addParameter(transportInDescription, BridgeConstants.PORT_PARAM, httpWebSocketConfig.getPort());
+        addParameter(transportInDescription, BridgeConstants.HOSTNAME_PARAM, httpWebSocketConfig.getHostname());
+        addParameter(transportInDescription, BridgeConstants.HTTP_PROTOCOL_VERSION_PARAM,
+                httpWebSocketConfig.getHttpProtocolVersion());
 
         SSLConfiguration sslConfiguration = httpWebSocketConfig.getSslConfiguration();
+        // SSLConfiguration will be null for non-secured transport. Hence, need to do the null check here.
         if (Objects.nonNull(sslConfiguration)) {
             populateSSLParameters(sslConfiguration, transportInDescription);
         }

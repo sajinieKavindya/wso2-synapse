@@ -52,28 +52,22 @@ public abstract class BaseConfiguration {
      */
     private WorkerPool workerPool;
 
-    private static final String HTTP_WORKER_THREAD_GROUP_NAME = "HTTP Worker Thread Group";
-    private static final String HTTP_WORKER_THREAD_ID = "HTTPWorker";
-
     NettyConfiguration conf = NettyConfiguration.getInstance();
 
-    public BaseConfiguration(ConfigurationContext configurationContext, WorkerPool workerPool) {
+    public BaseConfiguration(ConfigurationContext configurationContext) {
 
         this.configurationContext = configurationContext;
-        this.workerPool = workerPool;
     }
 
     public void build() throws AxisFault {
 
-        if (Objects.isNull(workerPool)) {
-            workerPool = WorkerPoolFactory.getWorkerPool(
-                    conf.getWorkerPoolCoreSize(),
-                    conf.getWorkerPoolMaxSize(),
-                    conf.getWorkerThreadKeepaliveSec(),
-                    conf.getWorkerPoolQueueLen(),
-                    HTTP_WORKER_THREAD_GROUP_NAME,
-                    HTTP_WORKER_THREAD_ID);
-        }
+        workerPool = WorkerPoolFactory.getWorkerPool(
+                conf.getWorkerPoolCoreSize(),
+                conf.getWorkerPoolMaxSize(),
+                conf.getWorkerThreadKeepaliveSec(),
+                conf.getWorkerPoolQueueLen(),
+                NettyConfiguration.HTTP_WORKER_THREAD_GROUP_NAME,
+                NettyConfiguration.HTTP_WORKER_THREAD_ID);
     }
 
     /**

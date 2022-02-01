@@ -18,7 +18,6 @@
 
 package org.apache.synapse.transport.netty.api.config;
 
-
 import org.apache.axiom.om.OMAbstractFactory;
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.OMFactory;
@@ -45,6 +44,7 @@ public class SSLConfiguration {
     private final String preferredCiphersEl;
 
     public SSLConfiguration(SSLConfigurationBuilder builder) {
+
         this.keyStore = builder.keyStore;
         this.trustStore = builder.trustStore;
         this.clientAuthEl = builder.clientAuthEl;
@@ -55,6 +55,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getKeyStoreElement() {
+
         if (keyStore != null) {
             try {
                 return AXIOMUtil.stringToOM(keyStore);
@@ -66,6 +67,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getClientAuthElement() {
+
         if (clientAuthEl == null) {
             return null;
         }
@@ -76,6 +78,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getTrustStoreElement() {
+
         if (trustStore != null) {
             try {
                 return AXIOMUtil.stringToOM(trustStore);
@@ -87,6 +90,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getRevocationVerifierElement() {
+
         if (revocationVerifier != null) {
             try {
                 return AXIOMUtil.stringToOM(revocationVerifier);
@@ -98,6 +102,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getHttpsProtocolElement() {
+
         if (httpsProtocolsEl == null) {
             return null;
         }
@@ -108,6 +113,7 @@ public class SSLConfiguration {
     }
 
     public OMElement getSslProtocolElement() {
+
         if (sslProtocol == null) {
             return null;
         }
@@ -119,9 +125,11 @@ public class SSLConfiguration {
 
     /**
      * Return a OMElement of preferred ciphers parameter values.
+     *
      * @return OMElement
      */
     public OMElement getPreferredCiphersElement() {
+
         if (preferredCiphersEl == null) {
             return null;
         }
@@ -132,29 +140,38 @@ public class SSLConfiguration {
     }
 
     public String getSslProtocol() {
+
         return sslProtocol;
     }
 
     public String getKeyStore() {
+
         return keyStore;
     }
 
     public String getTrustStore() {
+
         return trustStore;
     }
 
     public String getClientAuthEl() {
+
         return clientAuthEl;
     }
 
     public String getHttpsProtocolsEl() {
+
         return httpsProtocolsEl;
     }
 
     public String getRevocationVerifier() {
+
         return revocationVerifier;
     }
 
+    /**
+     * Builder class for the SSLConfiguration.
+     */
     public static class SSLConfigurationBuilder {
 
         private String keyStore;
@@ -166,40 +183,48 @@ public class SSLConfiguration {
         private String preferredCiphersEl;
 
         public SSLConfiguration build() {
+
             return new SSLConfiguration(this);
         }
 
         public SSLConfigurationBuilder keyStore(String keyStore) {
+
             this.keyStore = keyStore;
             return this;
         }
 
         public SSLConfigurationBuilder trustStore(String trustStore) {
+
             this.trustStore = trustStore;
             return this;
         }
 
         public SSLConfigurationBuilder clientAuthEl(String clientAuthEl) {
+
             this.clientAuthEl = clientAuthEl;
             return this;
         }
 
         public SSLConfigurationBuilder httpsProtocolsEl(String httpsProtocolsEl) {
+
             this.httpsProtocolsEl = httpsProtocolsEl;
             return this;
         }
 
         public SSLConfigurationBuilder revocationVerifier(String revocationVerifier) {
+
             this.revocationVerifier = revocationVerifier;
             return this;
         }
 
         public SSLConfigurationBuilder sslProtocol(String sslProtocol) {
+
             this.sslProtocol = sslProtocol;
             return this;
         }
 
         public SSLConfigurationBuilder preferredCiphersEl(String preferredCiphersEl) {
+
             this.preferredCiphersEl = preferredCiphersEl;
             return this;
         }

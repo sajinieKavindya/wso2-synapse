@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021. WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022. WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -16,9 +16,7 @@
  * under the License.
  *
  */
-
 package org.apache.synapse.transport.netty.util;
-
 
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.soap.SOAPEnvelope;
@@ -52,20 +50,18 @@ import java.util.Iterator;
 import java.util.Map;
 import javax.xml.stream.XMLStreamException;
 
-
 /**
  * Class DeferredMessageBuilder contains the tools required to build the payload.
  */
 public class DeferredMessageBuilder {
 
-    private static Log log = LogFactory.getLog(DeferredMessageBuilder.class);
+    private static final Log LOG = LogFactory.getLog(DeferredMessageBuilder.class);
 
     public static final String RELAY_FORMATTERS_MAP = "__RELAY_FORMATTERS_MAP";
     public static final String FORCED_RELAY_FORMATTER = "__FORCED_RELAY_FORMATTER";
 
     private Map<String, Builder> builders = new HashMap<String, Builder>();
     private Map<String, MessageFormatter> formatters = new HashMap<String, MessageFormatter>();
-
 
     public DeferredMessageBuilder() {
         // first initialize with the default builders
@@ -86,18 +82,22 @@ public class DeferredMessageBuilder {
     }
 
     public Map<String, Builder> getBuilders() {
+
         return builders;
     }
 
     public void addBuilder(String contentType, Builder builder) {
+
         builders.put(contentType, builder);
     }
 
     public void addFormatter(String contentType, MessageFormatter messageFormatter) {
+
         formatters.put(contentType, messageFormatter);
     }
 
     public Map<String, MessageFormatter> getFormatters() {
+
         return formatters;
     }
 
@@ -117,30 +117,17 @@ public class DeferredMessageBuilder {
         String contentType = (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
         String contentType1 = getContentType(contentType, msgCtx);
 
-        // TODO: Find a suitable substitution from Netty Transport
-        // in = HTTPTransportUtils.handleGZip(msgCtx, in);
-
-//        AxisConfiguration configuration = msgCtx.getConfigurationContext().getAxisConfiguration();
-//        Parameter useFallbackParameter =
-//                configuration.getParameter(Constants.Configuration.USE_DEFAULT_FALLBACK_BUILDER);
-//
-//        boolean useFallbackBuilder = false;
-//
-//        if (useFallbackParameter != null) {
-//            JavaUtils.isTrueExplicitly(useFallbackParameter.getValue(), useFallbackBuilder);
-//        }
-
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
 
         String contentLength = null;
-        String trasferEncoded = null;
+        String transferEncoded = null;
         if (transportHeaders != null) {
             contentLength = (String) transportHeaders.get(BridgeConstants.CONTENT_LEN);
-            trasferEncoded = (String) transportHeaders.get(BridgeConstants.TRANSFER_ENCODING);
+            transferEncoded = (String) transportHeaders.get(BridgeConstants.TRANSFER_ENCODING);
 
             if (contentType.equals(BridgeConstants.DEFAULT_CONTENT_TYPE)
                     && (contentLength == null || Integer.parseInt(contentLength) == 0)
-                    && trasferEncoded == null) {
+                    && transferEncoded == null) {
                 msgCtx.setProperty(BridgeConstants.NO_ENTITY_BODY, true);
                 msgCtx.setProperty(Constants.Configuration.CONTENT_TYPE, "");
                 // msgCtx.setProperty(BridgeConstants.RELAY_EARLY_BUILD, true);
@@ -156,7 +143,7 @@ public class DeferredMessageBuilder {
             builder = MessageProcessorSelector.getMessageBuilder(contentType1, msgCtx);
             if (builder != null) {
                 try {
-                    if (contentLength != null && "0".equals(contentLength)) {
+                    if ("0".equals(contentLength)) {
                         element = new SOAP11Factory().getDefaultEnvelope();
                         //since we are setting an empty envelop to achieve the empty body, we have to set a different
                         //content-type other than text/xml, application/soap+xml or any other content-type which will
@@ -167,7 +154,7 @@ public class DeferredMessageBuilder {
                         element = builder.processDocument(in, contentType, msgCtx);
                     }
                 } catch (AxisFault axisFault) {
-                    log.error("Error building message", axisFault);
+                    LOG.error("Error building message", axisFault);
                     throw axisFault;
                 }
             }
@@ -178,14 +165,14 @@ public class DeferredMessageBuilder {
                 try {
                     element = BuilderUtil.getPOXBuilder(in, null).getDocumentElement();
                 } catch (XMLStreamException e) {
-                    log.error("Error building message using POX Builder", e);
+                    LOG.error("Error building message using POX Builder", e);
                     throw e;
                 }
             } else {
                 // switch to default
                 builder = new SOAPBuilder();
                 try {
-                    if (contentLength != null && "0".equals(contentLength)) {
+                    if ("0".equals(contentLength)) {
                         element = new SOAP11Factory().getDefaultEnvelope();
                         //since we are setting an empty envelop to achieve the empty body, we have to set a different
                         //content-type other than text/xml, application/soap+xml or any other content-type which will
@@ -196,7 +183,7 @@ public class DeferredMessageBuilder {
                         element = builder.processDocument(in, contentType, msgCtx);
                     }
                 } catch (AxisFault axisFault) {
-                    log.error("Error building message using SOAP builder");
+                    LOG.error("Error building message using SOAP builder");
                     throw axisFault;
                 }
             }
@@ -216,6 +203,7 @@ public class DeferredMessageBuilder {
     }
 
     private Builder getBuilderForContentType(String contentType) {
+
         String type;
         int index = contentType.indexOf(';');
         if (index > 0) {
@@ -244,6 +232,7 @@ public class DeferredMessageBuilder {
     }
 
     public static Builder createBuilder(String className) throws AxisFault {
+
         try {
             Class c = Class.forName(className);
             Object o = c.newInstance();
@@ -261,6 +250,7 @@ public class DeferredMessageBuilder {
     }
 
     public static MessageFormatter createFormatter(String className) throws AxisFault {
+
         try {
             Class c = Class.forName(className);
             Object o = c.newInstance();
@@ -278,7 +268,8 @@ public class DeferredMessageBuilder {
     }
 
     private static void handleException(String message, Exception e) throws AxisFault {
-        log.error(message, e);
+
+        LOG.error(message, e);
         throw new AxisFault(message, e);
     }
 
@@ -287,11 +278,13 @@ public class DeferredMessageBuilder {
      * responses with text/xml to be processed using the ApplicationXMLBuilder (which is technically wrong, it should be
      * the duty of the backend service to send the correct content type, which makes the most sense (refer RFC 1049),
      * alas, tis not the way of the World).
-     * @param contentType
-     * @param msgContext
-     * @return  MIME content type.
+     *
+     * @param contentType content type
+     * @param msgContext  message context
+     * @return MIME content type.
      */
     public static String getContentType(String contentType, MessageContext msgContext) {
+
         String type;
         int index = contentType.indexOf(';');
         if (index > 0) {

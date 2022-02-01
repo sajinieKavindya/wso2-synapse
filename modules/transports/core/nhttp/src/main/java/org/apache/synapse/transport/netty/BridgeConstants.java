@@ -26,6 +26,10 @@ public class BridgeConstants {
     public static final String TRANSPORT_NAME_HTTP = "http";
     public static final String TRANSPORT_NAME_HTTPS = "https";
 
+    public static final String PORT_PARAM = "port";
+    public static final String HOSTNAME_PARAM = "hostname";
+    public static final String HTTP_PROTOCOL_VERSION_PARAM = "protocolVersion";
+
     public static final String BRIDGE_LOG_PREFIX = "[Bridge] ";
 
     public static final String VALUE_TRUE = "true";
@@ -63,6 +67,7 @@ public class BridgeConstants {
     public static final String NON_BLOCKING_TRANSPORT = "NonBlockingTransport";
 
     public static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
+    public static final String JSON_CONTENT_TYPE = "application/json";
     public static final String RELAY_EARLY_BUILD = "relay_early_build";
     public static final String HTTP_SOURCE_CONFIGURATION = "HTTP_SOURCE_CONFIGURATION";
     public static final String HTTP_TARGET_CONFIGURATION = "HTTP_TARGET_CONFIGURATION";
@@ -80,6 +85,8 @@ public class BridgeConstants {
     public static final String INTERNAL_EXCEPTION_ORIGIN = "_INTERNAL_EXCEPTION_ORIGIN";
     public static final String INTERNAL_ORIGIN_ERROR_HANDLER = "TARGET_ERROR_HANDLER";
     public static final String LOCATION = "Location";
+    public static final String CONF_LOCATION = "conf.location";
+    public static final String BUFFERED_INPUT_STREAM = "bufferedInputStream";
 
     // move later
     public static final String CARBON_SERVER_XML_NAMESPACE = "http://wso2.org/projects/carbon/carbon.xml";
@@ -121,12 +128,18 @@ public class BridgeConstants {
     public static final String HTTPS_PROTOCOL = "HttpsProtocols";
     public static final String CLIENT_REVOCATION = "CertificateRevocationVerifier";
     public static final String PREFERRED_CIPHERS = "PreferredCiphers";
-    public static final String SSL_SESSION_TIMEOUT = "sessionTimeout";
-    public static final String SSL_HANDSHAKE_TIMEOUT = "handshakeTimeout";
+    public static final String SSL_SESSION_TIMEOUT = "SessionTimeout";
+    public static final String SSL_HANDSHAKE_TIMEOUT = "HandshakeTimeout";
     public static final String STORE_LOCATION = "Location";
     public static final String TYPE = "Type";
     public static final String PASSWORD = "Password";
     public static final String KEY_PASSWORD = "KeyPassword";
+    public static final String NO_VALIDATE_CERT = "novalidatecert";
+    public static final String SSL_ENABLED_PROTOCOLS = "sslEnabledProtocols";
+    public static final String CIPHERS = "ciphers";
+    public static final String CACHE_SIZE = "CacheSize";
+    public static final String CACHE_DELAY = "CacheDelay";
+    public static final String DEFAULT_SSL_PROTOCOL = "TLS";
 
     //Http method type constants to be used in synapse
     public static final String HTTP_HEAD = "HEAD";
@@ -237,5 +250,8 @@ public class BridgeConstants {
      * A message context property indicating "TRUE". This will set on success scenarios.
      */
     public static final String HTTP_202_RECEIVED = "HTTP_202_RECEIVED";
+
+
+    public static final String DEFAULT_OUTBOUND_USER_AGENT = "WSO2-HTTP-Synapse-Transport";
 
 }

@@ -45,8 +45,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
-import org.apache.synapse.transport.passthru.PassThroughConstants;
-import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
 
@@ -70,17 +68,16 @@ public class MessageUtils {
 
     private static volatile Handler addressingInHandler = null;
 
-    private static Boolean forcePTBuild = true;
+    private static final Boolean forceMessageBuild;
 
-    private static boolean forceXmlValidation = false;
+    private static final boolean forceXmlValidation;
 
-    private static boolean forceJSONValidation = false;
+    private static final boolean forceJSONValidation;
 
     static {
-        forcePTBuild = NettyConfiguration.getInstance().getBooleanProperty(
-                PassThroughConstants.FORCE_PASSTHROUGH_BUILDER, true);
-        forceXmlValidation = PassThroughConfiguration.getInstance().isForcedXmlMessageValidationEnabled();
-        forceJSONValidation = PassThroughConfiguration.getInstance().isForcedJSONMessageValidationEnabled();
+        forceMessageBuild = NettyConfiguration.getInstance().isForcedMessageBuildEnabled();
+        forceXmlValidation = NettyConfiguration.getInstance().isForcedXmlMessageValidationEnabled();
+        forceJSONValidation = NettyConfiguration.getInstance().isForcedJSONMessageValidationEnabled();
     }
 
     public static void buildMessage(MessageContext msgCtx)
@@ -99,12 +96,12 @@ public class MessageUtils {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Content Type is null and the message is not build");
             }
-            msgCtx.setProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED,
+            msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED,
                     Boolean.TRUE);
             return;
         }
 
-        if (Objects.isNull(msgCtx.getProperty("HTTP_CARBON_MESSAGE")) || !forcePTBuild) {
+        if (Objects.isNull(msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE)) || !forceMessageBuild) {
             return;
         }
 
@@ -123,7 +120,7 @@ public class MessageUtils {
                 contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
             }
         } catch (NumberFormatException e) {
-            LOG.error("NumberFormatException");
+            // ignore
         }
 
         if (contentLength <= 0) {
@@ -144,7 +141,7 @@ public class MessageUtils {
         }
 
         BufferedInputStream bufferedInputStream = (BufferedInputStream) msgCtx
-                .getProperty(PassThroughConstants.BUFFERED_INPUT_STREAM);
+                .getProperty(BridgeConstants.BUFFERED_INPUT_STREAM);
         if (bufferedInputStream != null) {
             try {
                 bufferedInputStream.reset();
@@ -158,11 +155,11 @@ public class MessageUtils {
             // TODO: need to handle properly for the moment lets use around 100k
             // buffer.
             bufferedInputStream.mark(128 * 1024);
-            msgCtx.setProperty(PassThroughConstants.BUFFERED_INPUT_STREAM,
+            msgCtx.setProperty(BridgeConstants.BUFFERED_INPUT_STREAM,
                     bufferedInputStream);
         }
 
-        OMElement element = null;
+        OMElement element;
         try {
             element = messageBuilder.getDocument(msgCtx, bufferedInputStream);
             if (element != null) {
@@ -171,14 +168,12 @@ public class MessageUtils {
                         messageBuilder.getFormatters());
                 msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, Boolean.TRUE);
 
-                earlyBuild = msgCtx.getProperty(PassThroughConstants.RELAY_EARLY_BUILD) != null ? (Boolean) msgCtx
-                        .getProperty(PassThroughConstants.RELAY_EARLY_BUILD) : earlyBuild;
+                earlyBuild = msgCtx.getProperty(BridgeConstants.RELAY_EARLY_BUILD) != null ? (Boolean) msgCtx
+                        .getProperty(BridgeConstants.RELAY_EARLY_BUILD) : earlyBuild;
 
                 if (!earlyBuild) {
                     processAddressing(msgCtx);
                 }
-
-                // TODO: implement XML/JSON force validation
 
                 //force validation makes sure that the xml is well formed (not having multi root element), and the json
                 // message is valid (not having any content after the final enclosing bracket)
@@ -187,7 +182,7 @@ public class MessageUtils {
                     try {
                         String contentType = (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
 
-                        if (PassThroughConstants.JSON_CONTENT_TYPE.equals(getMIMEContentType(contentType))
+                        if (BridgeConstants.JSON_CONTENT_TYPE.equals(getMIMEContentType(contentType))
                                 && forceJSONValidation) {
                             rawData = byteArrayOutputStream.toString();
                             JsonParser jsonParser = new JsonParser();
@@ -204,14 +199,13 @@ public class MessageUtils {
                             rawData = byteArrayOutputStream.toString();
                         }
                         LOG.error("Error while building the message.\n" + rawData);
-                        msgCtx.setProperty(PassThroughConstants.RAW_PAYLOAD, rawData);
+                        msgCtx.setProperty(BridgeConstants.RAW_PAYLOAD, rawData);
                         throw e;
                     }
                 }
             }
         } catch (IOException | XMLStreamException e) {
             msgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, Boolean.TRUE);
-            // handleException("Error while building Passthrough stream", e);
         }
     }
 
@@ -250,11 +244,8 @@ public class MessageUtils {
 
         if (inputStream != null) {
             // read ahead few characters to see if the stream is valid.
-
-            /**
-             * Checks for all empty or all whitespace streams and if found  sets isEmptyPayload to false. The while
-             * loop exits if found any character other than space or end of stream reached.
-             **/
+            // Checks for all empty or all whitespace streams and if found  sets isEmptyPayload to false. The while
+            // loop exits if found any character other than space or end of stream reached.
             int c = inputStream.read();
             while (c != -1) {
                 if (c != 32) {
@@ -349,7 +340,7 @@ public class MessageUtils {
 
     public static OMOutputFormat getOMOutputFormat(MessageContext msgContext) {
 
-        OMOutputFormat format = null;
+        OMOutputFormat format;
         if (msgContext.getProperty(BridgeConstants.MESSAGE_OUTPUT_FORMAT) != null) {
             format = (OMOutputFormat) msgContext.getProperty(BridgeConstants.MESSAGE_OUTPUT_FORMAT);
         } else {
@@ -361,9 +352,9 @@ public class MessageUtils {
         msgContext.setDoingREST(TransportUtils.isDoingREST(msgContext));
 
         /*
-         *  PassThroughConstants.INVOKED_REST set to true here if isDoingREST is true -
+         *  BridgeConstants.INVOKED_REST set to true here if isDoingREST is true -
          *  this enables us to check whether the original request to the endpoint was a
-         * REST request inside DefferedMessageBuilder (which we need to convert
+         * REST request inside DeferredMessageBuilder (which we need to convert
          * text/xml content type into application/xml if the request was not a SOAP
          * request.
          */
@@ -442,16 +433,14 @@ public class MessageUtils {
             if (requestResponseTransport != null) {
 
                 Boolean disableAck = getDisableAck(messageContext);
-                if (disableAck == null || disableAck.booleanValue() == false) {
+                if (disableAck == null || !disableAck) {
                     ((RequestResponseTransport) requestResponseTransport)
                             .acknowledgeMessage(messageContext);
                 }
             }
         } else if (AddressingHelper.isReplyRedirected(messageContext)
                 && AddressingHelper.isFaultRedirected(messageContext)) {
-            if (mepString.equals(WSDL2Constants.MEP_URI_IN_OUT)
-                    || mepString.equals(WSDL2Constants.MEP_URI_IN_OUT)
-                    || mepString.equals(WSDL2Constants.MEP_URI_IN_OUT)) {
+            if (mepString.equals(WSDL2Constants.MEP_URI_IN_OUT)) {
                 // OR, if 2 way operation but the response is intended to not
                 // use the response channel of a 2-way transport
                 // then we don't need to keep the transport waiting.
@@ -466,7 +455,7 @@ public class MessageUtils {
                     // disabled this code.
                     Boolean disableAck = getDisableAck(messageContext);
 
-                    if (disableAck == null || disableAck.booleanValue() == false) {
+                    if (disableAck == null || !disableAck) {
                         ((RequestResponseTransport) requestResponseTransport)
                                 .acknowledgeMessage(messageContext);
                     }
@@ -476,7 +465,7 @@ public class MessageUtils {
         }
     }
 
-    private static Boolean getDisableAck(MessageContext msgContext) throws AxisFault {
+    private static Boolean getDisableAck(MessageContext msgContext) {
         // We should send an early ack to the transport whenever possible, but
         // some modules need
         // to use the back channel, so we need to check if they have disabled
@@ -493,8 +482,6 @@ public class MessageUtils {
     }
 
     private static boolean isOneWay(String mepString) {
-        return (mepString.equals(WSDL2Constants.MEP_URI_IN_ONLY)
-                || mepString.equals(WSDL2Constants.MEP_URI_IN_ONLY) || mepString
-                .equals(WSDL2Constants.MEP_URI_IN_ONLY));
+        return mepString.equals(WSDL2Constants.MEP_URI_IN_ONLY);
     }
 }

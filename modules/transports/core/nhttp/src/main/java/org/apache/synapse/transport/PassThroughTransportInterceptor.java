@@ -1,9 +1,8 @@
 package org.apache.synapse.transport;
 
 import org.apache.axis2.context.MessageContext;
-import org.apache.log4j.Logger;
-import org.apache.synapse.transport.netty.util.RequestResponseUtils;
-import org.apache.synapse.transport.nhttp.NhttpConstants;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
@@ -21,7 +20,7 @@ import javax.xml.stream.XMLStreamException;
 
 public class PassThroughTransportInterceptor implements TransportInterceptor {
 
-    private static final Logger LOGGER = Logger.getLogger(PassThroughTransportInterceptor.class);
+    private static final Log LOG = LogFactory.getLog(PassThroughTransportInterceptor.class);
 
     @Override
     public InputStream getMessageDataStream(MessageContext context) throws IOException {
@@ -56,7 +55,7 @@ public class PassThroughTransportInterceptor implements TransportInterceptor {
                     context.setProperty(PassThroughConstants.BUFFERED_INPUT_STREAM, bufferedInputStream);
                     RelayUtils.buildMessage(context);
                 } catch (Exception e) {
-                    LOGGER.error("Error while building message", e);
+                    LOG.error("Error while building message", e);
                 }
                 return null;
             }

@@ -42,6 +42,7 @@ public class Axis2HttpTargetRespListener implements HttpConnectorListener {
 
     public Axis2HttpTargetRespListener(WorkerPool workerPool, MessageContext requestMsgContext,
                                        TargetConfiguration targetConfiguration) {
+
         this.workerPool = workerPool;
         this.requestMsgCtx = requestMsgContext;
         this.targetConfiguration = targetConfiguration;
@@ -50,12 +51,14 @@ public class Axis2HttpTargetRespListener implements HttpConnectorListener {
 
     @Override
     public void onMessage(HttpCarbonMessage httpResponse) {
+
         LOG.debug(BridgeConstants.BRIDGE_LOG_PREFIX + "Response received");
         workerPool.execute(new HttpTargetResponseWorker(requestMsgCtx, httpResponse, targetConfiguration));
     }
 
     @Override
     public void onError(Throwable throwable) {
+
         LOG.error("Error while sending the request to the backend service or "
                 + "processing the response from backend service", throwable);
         if (requestMsgCtx != null) {

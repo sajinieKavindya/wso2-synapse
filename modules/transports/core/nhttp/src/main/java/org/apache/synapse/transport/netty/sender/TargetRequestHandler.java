@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -31,9 +31,9 @@ import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.transport.http.SOAPMessageFormatter;
 import org.apache.axis2.util.MessageProcessorSelector;
-import org.apache.http.protocol.HTTP;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.protocol.HTTP;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.NettyConfiguration;
 import org.apache.synapse.transport.netty.config.TargetConfiguration;
@@ -51,6 +51,7 @@ import org.wso2.transport.http.netty.contract.HttpWsConnectorFactory;
 import org.wso2.transport.http.netty.contract.config.ChunkConfig;
 import org.wso2.transport.http.netty.contract.config.KeepAliveConfig;
 import org.wso2.transport.http.netty.contract.config.SenderConfiguration;
+import org.wso2.transport.http.netty.contractimpl.sender.channel.BootstrapConfiguration;
 import org.wso2.transport.http.netty.contractimpl.sender.channel.pool.ConnectionManager;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
@@ -59,7 +60,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -89,9 +89,8 @@ public class TargetRequestHandler {
         return outboundRequest;
     }
 
-    private static void prepareOutboundRequest(URL url, HttpCarbonMessage outboundRequest,
-                                               MessageContext msgContext, TargetConfiguration targetConfiguration)
-            throws AxisFault {
+    private static void prepareOutboundRequest(URL url, HttpCarbonMessage outboundRequest, MessageContext msgContext,
+                                               TargetConfiguration targetConfiguration) throws AxisFault {
 
         try {
             int port = getOutboundReqPort(url);
@@ -141,7 +140,7 @@ public class TargetRequestHandler {
         outboundRequest.setHttpMethod(httpMethod);
     }
 
-    public static int getOutboundReqPort(URL url) {
+    private static int getOutboundReqPort(URL url) {
 
         int port = 80;
         if (url.getPort() != -1) {
@@ -183,12 +182,9 @@ public class TargetRequestHandler {
     }
 
     private static void setOutboundUserAgent(HttpHeaders headers) {
-        // The one in pass-through is "Synapse-PT-HttpComponents-NIO"
-        //TODO: refactor the name
-        String userAgent = "WSO2-Synapse-HTTP";
 
         if (!headers.contains(HttpHeaderNames.USER_AGENT)) {
-            headers.set(HttpHeaderNames.USER_AGENT, userAgent);
+            headers.set(HttpHeaderNames.USER_AGENT, BridgeConstants.DEFAULT_OUTBOUND_USER_AGENT);
         }
     }
 
@@ -319,15 +315,14 @@ public class TargetRequestHandler {
     public static HttpClientConnector createHttpClient(URL url, MessageContext msgContext,
                                                        HttpWsConnectorFactory httpWsConnectorFactory,
                                                        ConnectionManager connectionManager,
-                                                       TargetConfiguration targetConfiguration)
-            throws AxisFault {
+                                                       BootstrapConfiguration bootstrapConfiguration,
+                                                       TargetConfiguration targetConfiguration) throws AxisFault {
 
         try {
             SenderConfiguration senderConfiguration = new SenderConfiguration();
             populateSenderConfigurations(msgContext, senderConfiguration, targetConfiguration, url);
 
-            // TODO:
-            return httpWsConnectorFactory.createHttpClientConnector(new HashMap<>(), senderConfiguration,
+            return httpWsConnectorFactory.createHttpClientConnector(bootstrapConfiguration, senderConfiguration,
                     connectionManager);
 
         } catch (Exception ex) {
@@ -362,30 +357,22 @@ public class TargetRequestHandler {
             senderConfiguration.setKeepAliveConfig(KeepAliveConfig.ALWAYS);
         }
 
-        if (RequestResponseUtils.isHTTPTraceLoggerEnabled()) {
-            senderConfiguration.setHttpTraceLogEnabled(true);
-        }
-
-        NettyConfiguration globalConfig = NettyConfiguration.getInstance();
+        senderConfiguration.setHttpTraceLogEnabled(targetConfiguration.isHttpTraceLogEnabled());
 
         // Set Request validation limits.
-        boolean isRequestLimitsValidationEnabled = globalConfig.isClientRequestLimitsValidationEnabled();
+        boolean isRequestLimitsValidationEnabled = targetConfiguration.isRequestLimitsValidationEnabled();
         if (isRequestLimitsValidationEnabled) {
-            RequestResponseUtils.setInboundMgsSizeValidationConfig(globalConfig.getClientRequestMaxStatusLineLength(),
-                    globalConfig.getClientRequestMaxHeaderSize(), globalConfig.getClientRequestMaxEntityBodySize(),
+            RequestResponseUtils.setInboundMgsSizeValidationConfig(
+                    targetConfiguration.getClientRequestMaxStatusLineLength(),
+                    targetConfiguration.getClientRequestMaxHeaderSize(),
+                    targetConfiguration.getClientRequestMaxEntityBodySize(),
                     senderConfiguration.getMsgSizeValidationConfig());
         }
 
-        int timeout = NettyConfiguration.getInstance().getClientEndpointSocketTimeout();
-        if (timeout < 0) {
-            //TODO: what happens if this is 0. also make the default values as constants
-            senderConfiguration.setSocketIdleTimeout(0);
-        } else {
-            senderConfiguration.setSocketIdleTimeout(timeout * 1000);
-        }
+        senderConfiguration.setSocketIdleTimeout(targetConfiguration.getSocketTimeout() * 1000);
 
         if (BridgeConstants.PROTOCOL_HTTPS.equals(scheme)) {
-            HttpUtils.populateSSLConfiguration(senderConfiguration, targetConfiguration);
+            targetConfiguration.getClientSSLConfigurationBuilder().setClientSSLConfig(senderConfiguration);
         }
     }
 
@@ -402,7 +389,6 @@ public class TargetRequestHandler {
 
     private static boolean isClientEndpointKeepAliveDisabled(MessageContext msgContext) {
 
-        //TODO: put a code comment
         String noKeepAliveProperty = (String) msgContext.getProperty(BridgeConstants.NO_KEEPALIVE);
         if (Objects.nonNull(noKeepAliveProperty)) {
             return msgContext.isPropertyTrue(noKeepAliveProperty);
@@ -427,10 +413,10 @@ public class TargetRequestHandler {
         serializeData(msgContext, outboundRequestMsg);
     }
 
-    public static void sendOutboundRequest(HttpClientConnector clientConnector,
-                                           HttpCarbonMessage outboundRequestMsg,
-                                           MessageContext msgContext,
-                                           TargetConfiguration targetConfiguration) {
+    private static void sendOutboundRequest(HttpClientConnector clientConnector,
+                                            HttpCarbonMessage outboundRequestMsg,
+                                            MessageContext msgContext,
+                                            TargetConfiguration targetConfiguration) {
 
         HttpResponseFuture future = clientConnector.send(outboundRequestMsg);
         future.setHttpConnectorListener(new Axis2HttpTargetRespListener(targetConfiguration.getWorkerPool(),
@@ -465,7 +451,7 @@ public class TargetRequestHandler {
     }
 
     /**
-     * Checks if we need to the ignore the message body.
+     * Checks if we can ignore the message body.
      *
      * @param msgContext axis2 message context
      * @return whether we can ignore the message body

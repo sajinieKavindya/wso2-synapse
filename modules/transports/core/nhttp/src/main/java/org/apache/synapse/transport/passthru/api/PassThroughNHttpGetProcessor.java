@@ -126,11 +126,6 @@ public class PassThroughNHttpGetProcessor implements HttpGetRequestProcessor {
 		}
 	}
 
-	@Override
-	public void process(HttpCarbonMessage inboundCarbonMsg,
-                        MessageContext messageContext, boolean b) {
-	}
-
 	private void sendResponseAndFinish(HttpResponse response, int status,
                                        NHttpServerConnection conn, OutputStream os,
                                        MessageContext msgContext) {

@@ -18,6 +18,9 @@
  */
 package org.apache.synapse.transport.netty.config;
 
+/**
+ * This class contains the names of Netty transport related configuration properties.
+ */
 public class NettyConfigPropertyNames {
 
     /**
@@ -40,21 +43,6 @@ public class NettyConfigPropertyNames {
      * worker pool.
      */
     public static final String WORKER_POOL_QUEUE_LENGTH = "worker_pool_queue_length";
-
-    /**
-     * Defines the number of IO dispatcher threads used per reactor.
-     */
-    public static final String IO_THREADS_PER_REACTOR = "io_threads_per_reactor";
-
-    /**
-     * Defines the IO buffer size.
-     */
-    public static final String IO_BUFFER_SIZE = "io_buffer_size";
-
-    /**
-     * Defines the maximum open connection limit.
-     */
-    public static final String C_MAX_ACTIVE = "max_open_connections";
 
     /**
      * Defines whether ESB needs to preserve the original User-Agent header.
@@ -81,43 +69,17 @@ public class NettyConfigPropertyNames {
      */
     public static final String DISABLE_KEEPALIVE = "http.connection.disable.keepalive";
 
-    /**
-     * Defines the time interval for idle connection removal.
-     */
-    public static final String CONNECTION_IDLE_TIME = "transport.sender.connection.idle.time";
-
-    /**
-     * Defines the time allocated to avoid a connection being used
-     * at the moment it is being closed or timed out in milliseconds.
-     */
-    public static final String CONNECTION_GRACE_TIME = "transport.sender.connection.grace.time";
-
-    /**
-     * Defines the time interval for maximum connection lifespan.
-     */
-    public static final String MAXIMUM_CONNECTION_LIFESPAN = "transport.sender.connection.maximum.lifespan";
-
-    /**
-     * Defines the maximum number of connections per host port.
-     */
-    public static final String MAX_CONNECTION_PER_HOST_PORT = "http.max.connection.per.host.port";
-
-    /**
-     * Defines the maximum number of waiting messages per host port.
-     */
-    public static final String MAX_MESSAGES_PER_HOST_PORT = "http.max.messages.per.host.port";
-
     public static final String TRANSPORT_LISTENER_SHUTDOWN_WAIT_TIME_SEC = "transport.listener.shutdown.wait.sec";
 
     /**
-     * Defines whether Listening IOReactor is shared among non axis2 Listeners.
+     * Validate the bad formed xml message by building the whole xml document.
      */
-    public static final String HTTP_LISTENING_IO_REACTOR_SHARING_ENABLE = "http_listening_io_reactor_sharing_enable";
+    public static final String FORCE_XML_MESSAGE_VALIDATION = "force.xml.message.validation";
 
     /**
-     * Defines the header name set for correlation logs.
+     * Check for invalid json message by parsing the input message.
      */
-    public static final String CORRELATION_HEADER_NAME_PROPERTY = "correlation_header_name";
+    public static final String FORCE_JSON_MESSAGE_VALIDATION = "force.json.message.validation";
 
     public static final String HTTP_GET_REQUEST_PROCESSOR = "http.get.request.processor";
 
@@ -127,25 +89,39 @@ public class NettyConfigPropertyNames {
 
     public static final String HTTP_BLOCK_SERVICE_LIST = "http.block_service_list";
 
-    public static final String CLIENT_SSL_KEYSTORE_LOCATION = "client.ssl.keystore.location";
-    public static final String CLIENT_SSL_KEYSTORE_TYPE = "client.ssl.keystore.type";
-    public static final String CLIENT_SSL_KEYSTORE_PASSWORD = "client.ssl.keystore.password";
-    public static final String CLIENT_SSL_KEYSTORE_KEYPASSWORD = "client.ssl.keystore.keypassword";
-    public static final String CLIENT_SSL_TRUSTSTORE_LOCATION = "client.ssl.truststore.location";
-    public static final String CLIENT_SSL_TRUSTSTORE_TYPE = "client.ssl.truststore.type";
-    public static final String CLIENT_SSL_TRUSTSTORE_PASSWORD = "client.ssl.truststore.password";
-    public static final String CLIENT_SSL_HTTPS_PROTOCOLS = "client.ssl.https.protocols";
-    public static final String CLIENT_SSL_PROTOCOL = "client.ssl.protocol";
-    public static final String CLIENT_SSL_PREFERRED_CIPHERS = "client.ssl.preferred.ciphers";
-    public static final String CLIENT_SSL_SESSION_TIMEOUT = "client.ssl.session.timeout.in.seconds";
-    public static final String CLIENT_SSL_HANDSHAKE_TIMEOUT = "client.ssl.handshake.timeout.in.seconds";
-    public static final String CLIENT_SSL_DISABLE_CERT_VALIDATION = "client.ssl.disable.cert.validation";
-    public static final String CLIENT_SSL_HOSTNAME_VERIFIER = "client.ssl.hostname.verifier";
-    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_ENABLE
-            = "client.ssl.certificate.revocation.verifier.enable";
-    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_SIZE
-            = "client.ssl.certificate.revocation.verifier.cache.size";
-    public static final String CLIENT_SSL_CERTIFICATE_REVOCATION_VERIFIER_CACHE_DELAY
-            = "client.ssl.certificate.revocation.verifier.cache.delay";
+    public static final String FORCE_MESSAGE_BUILDER = "force.message.builder";
+
+    // properties which are allowed to be directly pass through from request context to response context explicitly
+    public static final String ALLOWED_RESPONSE_PROPERTIES = "allowed_response_properties";
+    public static final String REQUEST_LIMIT_VALIDATION = "http.requestLimits.validation.enabled";
+    public static final String MAX_STATUS_LINE_LENGTH = "http.requestLimits.maxStatusLineLength";
+    public static final String MAX_HEADER_SIZE = "http.requestLimits.maxHeaderSize";
+    public static final String MAX_ENTITY_BODY_SIZE = "http.requestLimits.maxEntityBodySize";
+    public static final String CLIENT_REQUEST_LIMIT_VALIDATION = "http.client.requestLimits.validation.enabled";
+    public static final String MAX_CLIENT_REQUEST_STATUS_LINE_LENGTH = "http.client.requestLimits.maxStatusLineLength";
+    public static final String MAX_CLIENT_REQUEST_HEADER_SIZE = "http.client.requestLimits.maxHeaderSize";
+    public static final String MAX_CLIENT_REQUEST_ENTITY_BODY_SIZE = "http.client.requestLimits.maxEntityBodySize";
+
+    public static final String HTTP_SOCKET_TIMEOUT = "http.socket.timeout";
+
+    //Client connection pooling configs
+    public static final String ENABLE_CUSTOM_CONNECTION_POOL_CONFIG = "custom.client.connection.pool.config.enabled";
+    /**
+     * Max active connections per route(host:port). Default value is -1 which indicates unlimited.
+     */
+    public static final String CONNECTION_POOLING_MAX_ACTIVE_CONNECTIONS =
+            "client.connection.pool.maxActiveConnections";
+    /**
+     * Maximum number of idle connections allowed per pool.
+     */
+    public static final String CONNECTION_POOLING_MAX_IDLE_CONNECTIONS = "client.connection.pool.maxIdleConnections";
+
+    /**
+     * Maximum amount of time, the client should wait for an idle connection before it sends an error
+     * when the pool is exhausted.
+     */
+    public static final String CONNECTION_POOLING_WAIT_TIME = "client.connection.pool.waitTimeInMillis";
+
+    public static final String CLIENT_ENDPOINT_SOCKET_TIMEOUT = "http.client.endpoint.socket.timeout";
 
 }

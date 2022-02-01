@@ -37,10 +37,10 @@ import org.apache.axis2.transport.RequestResponseTransport;
 import org.apache.axis2.transport.TransportUtils;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageContextBuilder;
-import org.apache.http.HttpStatus;
-import org.apache.http.protocol.HTTP;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpStatus;
+import org.apache.http.protocol.HTTP;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
@@ -70,6 +70,7 @@ public class HttpRequestWorker implements Runnable {
     private final MessageContext msgContext;
     private final ConfigurationContext configurationContext;
     private final SourceConfiguration sourceConfiguration;
+    private boolean requestHasEntityBody;
 
     public HttpRequestWorker(HttpCarbonMessage incomingCarbonMsg, SourceConfiguration sourceConfiguration) {
 
@@ -106,7 +107,7 @@ public class HttpRequestWorker implements Runnable {
      * Check if the request is a WSDL query by invoking the registered {@code HttpGetRequestProcessor} for this
      * transport.
      *
-     * @return if the request is a WSDL query or not
+     * @return true if the request is a WSDL query, otherwise false
      */
     private boolean isRequestToFetchWSDL() {
 
@@ -121,30 +122,30 @@ public class HttpRequestWorker implements Runnable {
             sourceConfiguration.getHttpGetRequestProcessor().process(incomingCarbonMsg, msgContext, true);
         }
 
-        // if this request is to fetch WSDL, then HttpGetRequestProcessor set the WSDL_REQUEST_HANDLED
-        // in the message context.
+        // if this request is to fetch WSDL, then the WSDL_REQUEST_HANDLED property should be set to true
+        // in the message context by the HttpGetRequestProcessor.
         return Boolean.TRUE.equals((msgContext.getProperty(BridgeConstants.WSDL_REQUEST_HANDLED)));
     }
 
     /**
      * Checks if the given HttpCarbonMessage has an entity body.
      *
-     * @param httpCarbonMessage  HttpCarbonMessage in which we need to check if an entity body is present
+     * @param httpCarbonMessage HttpCarbonMessage in which we need to check if an entity body is present
      * @return true if the HttpCarbonMessage has an entity body enclosed
      */
     private boolean doesRequestHaveEntityBody(HttpCarbonMessage httpCarbonMessage) {
 
+        // TODO: check for an alternative
         long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
         String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
         try {
             contentLength = lengthStr != null ? Long.parseLong(lengthStr) : contentLength;
             if (contentLength == BridgeConstants.NO_CONTENT_LENGTH_FOUND) {
                 //Read one byte to make sure the incoming stream has data
-                // TODO: analyze
                 contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
             }
         } catch (NumberFormatException e) {
-            LOG.error("NumberFormatException. Invalid content length");
+            LOG.error("Invalid content length found while checking the content length of the request entity body");
         }
         return contentLength > 0;
     }
@@ -182,21 +183,22 @@ public class HttpRequestWorker implements Runnable {
      */
     private void populateProperties() throws AxisFault {
 
+        this.requestHasEntityBody = doesRequestHaveEntityBody(incomingCarbonMsg);
+        if (!requestHasEntityBody) {
+            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
+        }
+
         // set ContentType, MessageType, and CHARACTER_SET_ENCODING properties
         setContentTypeMessageTypeAndCharacterEncoding();
 
         msgContext.setProperty(HTTPConstants.HTTP_METHOD, incomingCarbonMsg.getHttpMethod().toUpperCase());
         msgContext.setTo(new EndpointReference((String) incomingCarbonMsg.getProperty(BridgeConstants.TO)));
 
-        if (!doesRequestHaveEntityBody(incomingCarbonMsg)) {
-            msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
-        }
-
         String contentType = msgContext.getProperty(Constants.Configuration.CONTENT_TYPE).toString();
         String soapAction = incomingCarbonMsg.getHeaders().get(SOAP_ACTION_HEADER);
         int soapVersion = RequestResponseUtils.populateSOAPVersion(msgContext, contentType);
 
-        if (RequestResponseUtils.isDoingREST(msgContext, contentType, soapVersion, soapAction)) {
+        if (RequestResponseUtils.isRESTRequest(msgContext, contentType, soapVersion, soapAction)) {
             msgContext.setProperty(PassThroughConstants.REST_REQUEST_CONTENT_TYPE, contentType);
             msgContext.setDoingREST(true);
         }
@@ -205,14 +207,16 @@ public class HttpRequestWorker implements Runnable {
         setSOAPEnvelope(soapVersion);
     }
 
-    public void setSOAPAction(String soapAction) {
+    private void setSOAPAction(String soapAction) {
+
         if ((soapAction != null) && soapAction.startsWith("\"") && soapAction.endsWith("\"")) {
             soapAction = soapAction.substring(1, soapAction.length() - 1);
             msgContext.setSoapAction(soapAction);
         }
     }
 
-    public void setSOAPEnvelope(int soapVersion) throws AxisFault {
+    private void setSOAPEnvelope(int soapVersion) throws AxisFault {
+
         SOAPEnvelope envelope;
         SOAPFactory fac;
         if (soapVersion == 1) {
@@ -230,6 +234,7 @@ public class HttpRequestWorker implements Runnable {
     }
 
     public void setContentTypeMessageTypeAndCharacterEncoding() {
+
         String contentTypeHeader = incomingCarbonMsg.getHeaders().get(CONTENT_TYPE_HEADER);
         String charSetEncoding;
         String contentType;
@@ -245,7 +250,7 @@ public class HttpRequestWorker implements Runnable {
                 messageType = TransportUtils.getContentType(contentTypeHeader, msgContext);
             }
         } else {
-            if (doesRequestHaveEntityBody(incomingCarbonMsg)) {
+            if (requestHasEntityBody) {
                 Parameter param = sourceConfiguration.getConfigurationContext().getAxisConfiguration().
                         getParameter(BridgeConstants.DEFAULT_REQUEST_CONTENT_TYPE);
                 if (param != null) {
@@ -274,70 +279,98 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
     }
 
+    private boolean isResponseWritten() {
+
+        return msgContext.isPropertyTrue(Constants.RESPONSE_WRITTEN);
+    }
+
+    private boolean isSoapFault() {
+
+        return msgContext.getProperty(BridgeConstants.FORCE_SOAP_FAULT) != null;
+    }
+
+    private boolean forceSCAccepted() {
+
+        return msgContext.isPropertyTrue(BridgeConstants.FORCE_SC_ACCEPTED);
+    }
+
+    private boolean requestResponseTransportStatusEqualsToAcked() {
+
+        RequestResponseTransport.RequestResponseTransportStatus transportStatus =
+                ((RequestResponseTransport) msgContext.getProperty(RequestResponseTransport.TRANSPORT_CONTROL))
+                        .getStatus();
+        return RequestResponseTransport.RequestResponseTransportStatus.ACKED.equals(transportStatus);
+    }
+
+    private boolean nioAckRequested() {
+        // TODO: check this
+        return msgContext.isPropertyTrue(BridgeConstants.NIO_ACK_REQUESTED);
+    }
+
+    public boolean ackShouldSend() {
+
+        return forceSCAccepted()
+                || requestResponseTransportStatusEqualsToAcked()
+                || nioAckRequested() ||
+                !(isResponseWritten() || isSoapFault());
+    }
+
     /**
      * Sends a HTTP response to the client immediately after the current execution thread finishes, if the
      * 1. FORCE_SC_ACCEPTED property is true or
-     * 2. A response is not written or not skipped and no FORCE_SOAP_FAULT property is set or
+     * 2. A response is not written and no FORCE_SOAP_FAULT property is set or
      * 3. NIO-ACK-Requested property is set to true or
      * 4. RequestResponseTransportStatus is set to ACKED.
      */
     private void sendAck() {
 
-        String responseWritten = "";
-        if (msgContext.getOperationContext() != null) {
-            responseWritten = (String) msgContext.getOperationContext().getProperty(Constants.RESPONSE_WRITTEN);
-        }
-
-        if (msgContext.getProperty(BridgeConstants.FORCE_SOAP_FAULT) != null) {
-            responseWritten = "SKIP";
-        }
-
-        boolean respWillFollow = !Constants.VALUE_TRUE.equals(responseWritten)
-                && !"SKIP".equals(responseWritten);
-
-        RequestResponseTransport.RequestResponseTransportStatus transportStatus =
-                ((RequestResponseTransport) msgContext.getProperty(RequestResponseTransport.TRANSPORT_CONTROL))
-                        .getStatus();
-        boolean ack = RequestResponseTransport.RequestResponseTransportStatus.ACKED.equals(transportStatus);
-        boolean forced = msgContext.isPropertyTrue(BridgeConstants.FORCE_SC_ACCEPTED);
-
-        // TODO: check this further
-        boolean nioAck = msgContext.isPropertyTrue(BridgeConstants.NIO_ACK_REQUESTED, false);
-
-        if (respWillFollow || ack || forced || nioAck) {
-            HttpCarbonMessage clientRequest =
-                    (HttpCarbonRequest) this.msgContext.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
-
-            HttpCarbonMessage outboundResponse;
-
-            if (!nioAck) {
-                outboundResponse = new HttpCarbonMessage(
-                        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.ACCEPTED));
-                outboundResponse.setHttpStatusCode(HttpStatus.SC_ACCEPTED);
-
+        if (ackShouldSend()) {
+            int statusCode;
+            HttpResponseStatus responseStatus;
+            if (nioAckRequested()) {
+                statusCode = HttpStatus.SC_ACCEPTED;
+                responseStatus = HttpResponseStatus.ACCEPTED;
             } else {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
-                            + ", for MessageID : " + msgContext.getMessageID());
-                }
-                int statusCode = Integer.parseInt(msgContext.getProperty(NhttpConstants.HTTP_SC).toString());
-                outboundResponse = new HttpCarbonMessage(
-                        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.valueOf(statusCode)));
-                outboundResponse.setHttpStatusCode(statusCode);
+                statusCode = Integer.parseInt(msgContext.getProperty(NhttpConstants.HTTP_SC).toString());
+                responseStatus = HttpResponseStatus.valueOf(statusCode);
             }
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Sending ACK response with status " + statusCode + ", for MessageID : "
+                        + msgContext.getMessageID());
+            }
+            sendResponse(statusCode, responseStatus, false, null, null);
+        }
+    }
 
-            try {
-                clientRequest.respond(outboundResponse);
-            } catch (ServerConnectorException e) {
-                LOG.error("Error occurred while submitting the Ack to the client", e);
-            }
+    private void sendResponse(int statusCode, HttpResponseStatus responseStatus,
+                              boolean contentAvailable, String content, String contentType) {
 
-            try (OutputStream outputStream =
-                         RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
-                outputStream.write(new byte[0]);
-            } catch (IOException e) {
-                LOG.error("Error occurred while writing the Ack to the client", e);
-            }
+        HttpCarbonMessage clientRequest =
+                (HttpCarbonRequest) this.msgContext.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
+
+        HttpCarbonMessage outboundResponse;
+        try {
+            outboundResponse = new HttpCarbonMessage(new DefaultHttpResponse(HttpVersion.HTTP_1_1, responseStatus));
+            outboundResponse.setHttpStatusCode(statusCode);
+            clientRequest.respond(outboundResponse);
+
+        } catch (ServerConnectorException e) {
+            LOG.error("Error occurred while submitting the Ack to the client", e);
+            return;
+        }
+
+        if (!contentAvailable) {
+            outboundResponse.waitAndReleaseAllEntities();
+            outboundResponse.completeMessage();
+            return;
+        }
+
+        outboundResponse.setHeader(HTTP.CONTENT_TYPE, contentType);
+        try (OutputStream outputStream =
+                     RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
+            outputStream.write(content.getBytes());
+        } catch (IOException ioException) {
+            LOG.error("Error occurred while writing the response body to the client", ioException);
         }
     }
 
@@ -356,36 +389,11 @@ public class HttpRequestWorker implements Runnable {
             AxisEngine.sendFault(faultContext);
 
         } catch (Exception ex) {
-            HttpCarbonMessage clientRequest =
-                    (HttpCarbonRequest) msgContext.getProperty(BridgeConstants.HTTP_CLIENT_REQUEST_CARBON_MESSAGE);
+            String body = "<html><body><h1>Failed to process the request</h1>"
+                    + "<p>" + msg + "</p></body></html>";
 
-            HttpCarbonMessage outboundResponse = new HttpCarbonMessage(
-                    new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.INTERNAL_SERVER_ERROR));
-            outboundResponse.setHeader(HTTP.CONTENT_TYPE, "text/html");
-            outboundResponse.setHttpStatusCode(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Sending ACK response with status " + msgContext.getProperty(NhttpConstants.HTTP_SC)
-                        + ", for MessageID : " + msgContext.getMessageID());
-            }
-            try {
-                clientRequest.respond(outboundResponse);
-
-                // TODO: do not send the ex.getMessage(
-                String body = "<html><body><h1>Failed to process the request</h1>"
-                        + "<p>" + msg + "</p></body></html>";
-
-                try (OutputStream outputStream =
-                             RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
-                    outputStream.write(body.getBytes());
-                } catch (IOException ioException) {
-                    LOG.error("Error occurred while writing the response body to the client", ioException);
-                }
-            } catch (ServerConnectorException serverConnectorException) {
-                LOG.error("Error occurred while submitting the response to the client");
-            }
-
-
+            sendResponse(HttpStatus.SC_INTERNAL_SERVER_ERROR, HttpResponseStatus.INTERNAL_SERVER_ERROR,
+                    true, body, "text/html");
         }
     }
 
@@ -413,6 +421,5 @@ public class HttpRequestWorker implements Runnable {
     private void cleanup() {
         //clean threadLocal variables
         MessageContext.destroyCurrentMessageContext();
-        // TODO: clean tenantInfo
     }
 }

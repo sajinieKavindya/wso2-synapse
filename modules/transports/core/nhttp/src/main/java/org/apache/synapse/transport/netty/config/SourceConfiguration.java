@@ -22,15 +22,12 @@ import org.apache.axis2.AxisFault;
 import org.apache.axis2.context.ConfigurationContext;
 import org.apache.axis2.description.Parameter;
 import org.apache.axis2.description.TransportInDescription;
-import org.apache.axis2.transport.TransportListener;
 import org.apache.axis2.transport.base.ParamUtils;
-import org.apache.axis2.transport.base.threads.WorkerPool;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.http.conn.Scheme;
 import org.apache.synapse.transport.netty.BridgeConstants;
-import org.apache.synapse.transport.passthru.HttpGetRequestProcessor;
 
 import java.net.UnknownHostException;
 import java.util.List;
@@ -55,14 +52,14 @@ public class SourceConfiguration extends BaseConfiguration {
     private HttpGetRequestProcessor httpGetRequestProcessor = null;
 
     /**
-     * THe list of handlers to handle the inbound HTTP requests.
+     * The list of handlers to handle the inbound HTTP requests.
      */
     private List<MessagingHandler> messagingHandlers;
 
     public SourceConfiguration(ConfigurationContext configurationContext, TransportInDescription inDescription,
-                               Scheme scheme, List<MessagingHandler> messagingHandlers, WorkerPool workerPool) {
+                               Scheme scheme, List<MessagingHandler> messagingHandler) {
 
-        super(configurationContext, workerPool);
+        super(configurationContext);
         this.inDescription = inDescription;
         this.scheme = scheme;
         this.messagingHandlers = messagingHandlers;
@@ -84,14 +81,14 @@ public class SourceConfiguration extends BaseConfiguration {
     }
 
     private void populatePort() throws AxisFault {
-        port = ParamUtils.getRequiredParamInt(inDescription, TransportListener.PARAM_PORT);
+        port = ParamUtils.getRequiredParamInt(inDescription, BridgeConstants.PORT_PARAM);
         if (port == 0) {
             throw new AxisFault("Listener port is not defined!");
         }
     }
 
     private void populateHostname() {
-        Parameter hostParameter = inDescription.getParameter(TransportListener.HOST_ADDRESS);
+        Parameter hostParameter = inDescription.getParameter(BridgeConstants.HOSTNAME_PARAM);
         if (hostParameter != null) {
             host = ((String) hostParameter.getValue()).trim();
         } else if (conf.getListenerHostname() != null) {
@@ -107,7 +104,7 @@ public class SourceConfiguration extends BaseConfiguration {
     }
 
     private void populateHTTPProtocol() {
-        Parameter protocolParameter = inDescription.getParameter("protocolVersion");
+        Parameter protocolParameter = inDescription.getParameter(BridgeConstants.HTTP_PROTOCOL_VERSION_PARAM);
         if (protocolParameter != null) {
             String protocol = ((String) protocolParameter.getValue()).trim();
             if (!protocol.isEmpty()) {
@@ -130,15 +127,14 @@ public class SourceConfiguration extends BaseConfiguration {
         try {
             obj = Class.forName(clss).newInstance();
         } catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {
-            // TODO: change to a proper error log
-            handleException("Error creating HTTP GET Request processor", e);
+            handleException("Error occurred while creating HTTPGETRequestProcessor", e);
         }
 
         if (obj instanceof HttpGetRequestProcessor) {
             return (HttpGetRequestProcessor) obj;
         } else {
-            handleException("Error creating HTTP GET Request processor. It should be of type "
-                    + "org.apache.synapse.transport.passthru.HttpGetRequestProcessor");
+            handleException("Error occurred while creating HTTPGETRequestProcessor. The provided class should be" +
+                    "an implementation of interface org.apache.synapse.transport.netty.config.HttpGetRequestProcessor");
         }
         return null;
     }

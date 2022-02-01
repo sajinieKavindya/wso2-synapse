@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *  Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  *  WSO2 Inc. licenses this file to you under the Apache License,
  *  Version 2.0 (the "License"); you may not use this file except
@@ -29,9 +29,9 @@ import org.apache.axis2.context.MessageContext;
 import org.apache.axis2.transport.MessageFormatter;
 import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.MessageProcessorSelector;
-import org.apache.http.HttpStatus;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpStatus;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
 import org.apache.synapse.transport.netty.util.CacheUtils;
@@ -257,7 +257,6 @@ public class SourceResponseHandler {
     }
 
     private static boolean checkContentLengthAndTransferEncodingHeaderAllowance(String httpMethod, int statusCode) {
-        // TODO: check whether netty transport http implementation honour this rule.
         // According to RFC 7230 - HTTP/1.1 Message Syntax and Routing - Message Body Length, the following logic
         // was implemented.
         if (BridgeConstants.HTTP_HEAD.equalsIgnoreCase(httpMethod)) {
@@ -440,19 +439,23 @@ public class SourceResponseHandler {
     }
 
     private static boolean hasNoResponseBodyToSend(MessageContext msgCtx) {
+
         return msgCtx.isPropertyTrue(BridgeConstants.NO_ENTITY_BODY)
                 || msgCtx.isPropertyTrue(BridgeConstants.VALID_CACHED_RESPONSE);
     }
 
     private static boolean isEtagEnabled(MessageContext msgCtx) {
+
         return msgCtx.isPropertyTrue(BridgeConstants.HTTP_ETAG_ENABLED);
     }
 
     private static boolean isMTOMEnabled(MessageContext msgCtx) {
+
         return Objects.nonNull(msgCtx.getProperty(org.apache.axis2.Constants.Configuration.ENABLE_MTOM));
     }
 
     private static boolean isValidCacheResponse(MessageContext msgCtx) {
+
         return msgCtx.isPropertyTrue(BridgeConstants.VALID_CACHED_RESPONSE);
     }
 }
