@@ -43,15 +43,13 @@ public class ClientSSLConfigurationBuilder {
 
     private static final Log LOG = LogFactory.getLog(ClientSSLConfigurationBuilder.class);
 
-
-
     private String keyStore;
     private String keyStorePass;
     private String certPass;
     private String trustStore;
     private String trustStorePass;
     private String tlsStoreType;
-    private String sslProtocol = BridgeConstants.DEFAULT_SSL_PROTOCOL;
+    private String sslProtocol = BridgeConstants.TLS_PROTOCOL;
     private boolean validateCertEnabled;
     private int cacheValidityPeriod;
     private int cacheSize;
@@ -201,7 +199,6 @@ public class ClientSSLConfigurationBuilder {
         if (trustParam != null) {
             trustStoreElt = trustParam.getParameterElement().getFirstElement();
         }
-
         if (trustStoreElt == null) {
             throw new AxisFault("If server certification validation (novalidatecert) parameter is not configured to "
                     + "true, Truststore should be specified for secure connection");
@@ -218,8 +215,6 @@ public class ClientSSLConfigurationBuilder {
             throw new AxisFault("Cannot proceed because Password element is missing in TrustStore");
         }
         trustStorePass = SecureVaultValueReader.getSecureVaultValue(secretResolver, passwordElement);
-
-        // TODO: need to edit the transport-http to have a type for truststore
     }
 
     private void populateProtocolConfigs(Parameter sslProtocolParam,

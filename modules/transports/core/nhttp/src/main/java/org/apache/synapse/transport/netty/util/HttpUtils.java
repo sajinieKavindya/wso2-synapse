@@ -144,6 +144,31 @@ public class HttpUtils {
     }
 
     /**
+     * Checks if the given HttpCarbonMessage has an entity body.
+     *
+     * @param httpCarbonMessage HttpCarbonMessage in which we need to check if an entity body is present
+     * @return true if the HttpCarbonMessage has an entity body enclosed
+     */
+    public static boolean requestHasEntityBody(HttpCarbonMessage httpCarbonMessage) {
+
+        // TODO: check for an alternative
+        long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
+        String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
+        try {
+            contentLength = lengthStr != null ? Long.parseLong(lengthStr) : contentLength;
+            if (contentLength == BridgeConstants.NO_CONTENT_LENGTH_FOUND) {
+                //Read one byte to make sure the incoming stream has data
+                contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
+            }
+        } catch (NumberFormatException e) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Invalid content length found while checking the content length of the request entity body");
+            }
+        }
+        return contentLength > 0;
+    }
+
+    /**
      * Invokes {@code HttpResponseFuture} respond method to send the response back to the client.
      *
      * @param requestMsg  Represent the request message
@@ -168,7 +193,7 @@ public class HttpUtils {
      * @param outboundResponse Represents native response
      * @return HttpMessageDataStreamer that should be used for serializing
      */
-    public static HttpMessageDataStreamer getResponseDataStreamer(HttpCarbonMessage outboundResponse) {
+    public static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundResponse) {
 
         final HttpMessageDataStreamer outboundMsgDataStreamer;
         final PooledDataStreamerFactory pooledDataStreamerFactory = (PooledDataStreamerFactory)
@@ -192,6 +217,20 @@ public class HttpUtils {
         } finally {
             HttpUtils.closeMessageOutputStreamQuietly(outputStream);
         }
+    }
+
+    public static void serializeBytes(OutputStream outputStream, byte[] bytes) throws AxisFault {
+        try {
+            outputStream.write(bytes);
+        } catch (IOException e) {
+            RequestResponseUtils.handleException("Error occurred while serializing the message body.", e);
+        } finally {
+            HttpUtils.closeMessageOutputStreamQuietly(outputStream);
+        }
+    }
+
+    public static void writeEmptyBody(OutputStream outputStream) throws AxisFault {
+        serializeBytes(outputStream, new byte[0]);
     }
 
     public static void copyContentFromInboundHttpCarbonMessage(HttpCarbonMessage inboundMsg,
@@ -233,18 +272,29 @@ public class HttpUtils {
 
     public static boolean isGETRequest(MessageContext msgCtx) {
 
-        return BridgeConstants.HTTP_GET.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_METHOD).toString());
+        Object httpMethod = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
+        if (Objects.nonNull(httpMethod)) {
+            return BridgeConstants.HTTP_GET.equalsIgnoreCase(httpMethod.toString());
+        }
+        return false;
     }
 
     public static boolean isHEADRequest(MessageContext msgCtx) {
 
-        return BridgeConstants.HTTP_HEAD.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_METHOD).toString());
+        Object httpMethod = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
+        if (Objects.nonNull(httpMethod)) {
+            return BridgeConstants.HTTP_HEAD.equalsIgnoreCase(httpMethod.toString());
+        }
+        return false;
     }
 
     public static boolean isCONNECTRequest(MessageContext msgCtx) {
 
-        return BridgeConstants.HTTP_CONNECT.equalsIgnoreCase(msgCtx.getProperty(BridgeConstants.HTTP_CONNECT)
-                .toString());
+        Object httpMethod = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);
+        if (Objects.nonNull(httpMethod)) {
+            return BridgeConstants.HTTP_CONNECT.equalsIgnoreCase(httpMethod.toString());
+        }
+        return false;
     }
 
     public static boolean isNoEntityBodyRequest(MessageContext msgCtx) {

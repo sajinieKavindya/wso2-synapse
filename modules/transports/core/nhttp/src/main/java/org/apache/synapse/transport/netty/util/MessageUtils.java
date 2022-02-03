@@ -20,7 +20,6 @@
 package org.apache.synapse.transport.netty.util;
 
 import com.google.gson.JsonParser;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.OMOutputFormat;
 import org.apache.axis2.AxisFault;
@@ -110,20 +109,7 @@ public class MessageUtils {
 
         HttpMessageDataStreamer httpMessageDataStreamer = new HttpMessageDataStreamer(httpCarbonMessage);
 
-        // TODO: can use NO_ENTITY_BODY property
-        long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
-        String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
-        try {
-            contentLength = lengthStr != null ? Long.parseLong(lengthStr) : contentLength;
-            if (contentLength == BridgeConstants.NO_CONTENT_LENGTH_FOUND) {
-                // read one byte to make sure the incoming stream has data
-                contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
-            }
-        } catch (NumberFormatException e) {
-            // ignore
-        }
-
-        if (contentLength <= 0) {
+        if (!HttpUtils.requestHasEntityBody(httpCarbonMessage)) {
             return;
         }
 
@@ -152,7 +138,7 @@ public class MessageUtils {
 
         } else {
             bufferedInputStream = new BufferedInputStream(in);
-            // TODO: need to handle properly for the moment lets use around 100k
+            // Need to handle properly for the moment lets use around 100k
             // buffer.
             bufferedInputStream.mark(128 * 1024);
             msgCtx.setProperty(BridgeConstants.BUFFERED_INPUT_STREAM,

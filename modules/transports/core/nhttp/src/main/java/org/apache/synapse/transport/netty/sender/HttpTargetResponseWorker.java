@@ -148,7 +148,7 @@ public class HttpTargetResponseWorker implements Runnable {
 
     private boolean handleResponseFlow(int statusCode) {
 
-        if (is1xxInformationalResponse(statusCode)) {
+        if (isStatusCode1xx(statusCode)) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Received a " + statusCode + " informational response.");
             }
@@ -156,7 +156,7 @@ public class HttpTargetResponseWorker implements Runnable {
         }
 
         try {
-            if (is202Response(statusCode) && handle202(requestMsgCtx)) {
+            if (isStatusCode202(statusCode) && handle202(requestMsgCtx)) {
                 return true;
             }
         } catch (AxisFault ex) {
@@ -210,7 +210,7 @@ public class HttpTargetResponseWorker implements Runnable {
         httpResponse.getHeaders().forEach(entry -> headers.put(entry.getKey(), entry.getValue()));
         responseMsgCtx.setProperty(MessageContext.TRANSPORT_HEADERS, headers);
 
-        if (is202Response(statusCode)) {
+        if (isStatusCode202(statusCode)) {
             responseMsgCtx.setProperty(AddressingConstants.DISABLE_ADDRESSING_FOR_OUT_MESSAGES, Boolean.TRUE);
             responseMsgCtx.setProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED, Boolean.FALSE);
             responseMsgCtx.setProperty(BridgeConstants.SC_ACCEPTED, Boolean.TRUE);
@@ -287,7 +287,6 @@ public class HttpTargetResponseWorker implements Runnable {
     private boolean checkIfResponseHaveBodyBasedOnContentLenAndTransferEncodingHeaders(HttpHeaders headers,
                                                                                        MessageContext responseMsgCtx) {
 
-        // TODO: check in case insensitive manner
         String contentLengthHeader = headers.get(HTTP.CONTENT_LEN);
         boolean contentLengthHeaderPresent = contentLengthHeader != null;
         boolean transferEncodingHeaderPresent = headers.get(HTTP.TRANSFER_ENCODING) != null;
@@ -326,9 +325,7 @@ public class HttpTargetResponseWorker implements Runnable {
         int statusCode = httpResponse.getHttpStatusCode();
         String originalURL = httpResponse.getHeader(BridgeConstants.LOCATION);
 
-        //TODO: check the spec for Location header
-        if (originalURL != null && !targetConfiguration.isPreserveHttpHeader(BridgeConstants.LOCATION)
-                && !is3xxRedirectionResponse(statusCode) && !is201CreatedResponse(statusCode)) {
+        if (originalURL != null && shouldRewriteLocationHeader(statusCode)) {
             URL url;
             String urlContext;
             try {
@@ -357,23 +354,30 @@ public class HttpTargetResponseWorker implements Runnable {
         responseMsgCtx.setProperty(BridgeConstants.PRE_LOCATION_HEADER, originalURL);
     }
 
-    private boolean is1xxInformationalResponse(int statusCode) {
+    private boolean shouldRewriteLocationHeader(int statusCode) {
+
+        return !targetConfiguration.isPreserveHttpHeader(BridgeConstants.LOCATION)
+                && !isStatusCode3xxRedirection(statusCode)
+                && !isStatusCode201(statusCode);
+    }
+
+    private boolean isStatusCode1xx(int statusCode) {
 
         return statusCode / 100 == 1;
     }
 
-    private boolean is202Response(int statusCode) {
+    private boolean isStatusCode202(int statusCode) {
 
         return statusCode == HttpStatus.SC_ACCEPTED;
     }
 
-    private boolean is3xxRedirectionResponse(int statusCode) {
+    private boolean isStatusCode3xxRedirection(int statusCode) {
 
         return statusCode == HttpStatus.SC_MOVED_TEMPORARILY || statusCode == HttpStatus.SC_MOVED_PERMANENTLY
                 || statusCode == HttpStatus.SC_SEE_OTHER || statusCode == HttpStatus.SC_TEMPORARY_REDIRECT;
     }
 
-    private boolean is201CreatedResponse(int statusCode) {
+    private boolean isStatusCode201(int statusCode) {
 
         return statusCode == HttpStatus.SC_CREATED;
     }

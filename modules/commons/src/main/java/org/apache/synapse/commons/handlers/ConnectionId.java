@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -18,18 +18,23 @@
 package org.apache.synapse.commons.handlers;
 
 /**
- * Protocol types are represented in these values.
+ * This instance uniquely represents a single connection by an ID.
  */
-public enum Protocol {
-    HTTP,
-    HTTPS,
-    WS,
-    WSS,
-    JMS,
-    HL7,
-    FILE,
-    KAFKA,
-    MQTT,
-    RABBITMQ,
-    GRPC
+public class ConnectionId {
+    public String id;
+
+    public ConnectionId(String id) {
+
+        this.id = id;
+    }
+
+    public String getId() {
+
+        return id;
+    }
+
+    public void setConnectionId(String id) {
+
+        this.id = id;
+    }
 }

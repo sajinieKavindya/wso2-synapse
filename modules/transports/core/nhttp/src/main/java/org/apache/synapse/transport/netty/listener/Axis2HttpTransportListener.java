@@ -36,6 +36,7 @@ import org.wso2.transport.http.netty.contract.ServerConnector;
 import org.wso2.transport.http.netty.contract.ServerConnectorFuture;
 import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
 import org.wso2.transport.http.netty.contract.config.ServerBootstrapConfiguration;
+//import org.wso2.transport.http.netty.contract.websocket.WebSocketConnectorListener;
 import org.wso2.transport.http.netty.contractimpl.DefaultHttpWsConnectorFactory;
 
 import java.util.HashMap;
@@ -79,7 +80,7 @@ public class Axis2HttpTransportListener implements TransportListener {
     public void start() throws AxisFault {
         ServerConnectorFuture serverConnectorFuture = serverConnector.start();
         serverConnectorFuture.setHttpConnectorListener(new Axis2HttpConnectorListener(sourceConfiguration));
-        serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
+//        serverConnectorFuture.setWebSocketConnectorListener(new WebSocketServerListener(messagingHandlers));
         try {
             serverConnectorFuture.sync();
         } catch (InterruptedException e) {

@@ -19,7 +19,6 @@
 package org.apache.synapse.transport.netty.listener;
 
 import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpVersion;
 import org.apache.axiom.om.OMAbstractFactory;
@@ -44,6 +43,7 @@ import org.apache.http.protocol.HTTP;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.transport.netty.BridgeConstants;
 import org.apache.synapse.transport.netty.config.SourceConfiguration;
+import org.apache.synapse.transport.netty.util.HttpUtils;
 import org.apache.synapse.transport.netty.util.RequestResponseUtils;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
@@ -128,29 +128,6 @@ public class HttpRequestWorker implements Runnable {
     }
 
     /**
-     * Checks if the given HttpCarbonMessage has an entity body.
-     *
-     * @param httpCarbonMessage HttpCarbonMessage in which we need to check if an entity body is present
-     * @return true if the HttpCarbonMessage has an entity body enclosed
-     */
-    private boolean doesRequestHaveEntityBody(HttpCarbonMessage httpCarbonMessage) {
-
-        // TODO: check for an alternative
-        long contentLength = BridgeConstants.NO_CONTENT_LENGTH_FOUND;
-        String lengthStr = httpCarbonMessage.getHeader(HttpHeaderNames.CONTENT_LENGTH.toString());
-        try {
-            contentLength = lengthStr != null ? Long.parseLong(lengthStr) : contentLength;
-            if (contentLength == BridgeConstants.NO_CONTENT_LENGTH_FOUND) {
-                //Read one byte to make sure the incoming stream has data
-                contentLength = httpCarbonMessage.countMessageLengthTill(BridgeConstants.ONE_BYTE);
-            }
-        } catch (NumberFormatException e) {
-            LOG.error("Invalid content length found while checking the content length of the request entity body");
-        }
-        return contentLength > 0;
-    }
-
-    /**
      * Get the URI of underlying HttpCarbonMessage and generate the service prefix and add to the message context.
      */
     private void processHttpRequestUri() {
@@ -183,7 +160,7 @@ public class HttpRequestWorker implements Runnable {
      */
     private void populateProperties() throws AxisFault {
 
-        this.requestHasEntityBody = doesRequestHaveEntityBody(incomingCarbonMsg);
+        this.requestHasEntityBody = HttpUtils.requestHasEntityBody(incomingCarbonMsg);
         if (!requestHasEntityBody) {
             msgContext.setProperty(PassThroughConstants.NO_ENTITY_BODY, Boolean.TRUE);
         }
@@ -279,9 +256,11 @@ public class HttpRequestWorker implements Runnable {
         msgContext.setProperty(Constants.Configuration.CHARACTER_SET_ENCODING, charSetEncoding);
     }
 
-    private boolean isResponseWritten() {
+    private boolean isResponseWrittenOrSkipped() {
 
-        return msgContext.isPropertyTrue(Constants.RESPONSE_WRITTEN);
+        String respWritten = (String) msgContext.getOperationContext().getProperty(
+                Constants.RESPONSE_WRITTEN);
+        return BridgeConstants.VALUE_TRUE.equals(respWritten) || "SKIP".equals(respWritten);
     }
 
     private boolean isSoapFault() {
@@ -312,7 +291,7 @@ public class HttpRequestWorker implements Runnable {
         return forceSCAccepted()
                 || requestResponseTransportStatusEqualsToAcked()
                 || nioAckRequested() ||
-                !(isResponseWritten() || isSoapFault());
+                !(isResponseWrittenOrSkipped() || isSoapFault());
     }
 
     /**
@@ -327,7 +306,7 @@ public class HttpRequestWorker implements Runnable {
         if (ackShouldSend()) {
             int statusCode;
             HttpResponseStatus responseStatus;
-            if (nioAckRequested()) {
+            if (!nioAckRequested()) {
                 statusCode = HttpStatus.SC_ACCEPTED;
                 responseStatus = HttpResponseStatus.ACCEPTED;
             } else {
@@ -360,8 +339,13 @@ public class HttpRequestWorker implements Runnable {
         }
 
         if (!contentAvailable) {
-            outboundResponse.waitAndReleaseAllEntities();
-            outboundResponse.completeMessage();
+            try {
+                OutputStream messageOutputStream = HttpUtils.getHttpMessageDataStreamer(outboundResponse)
+                        .getOutputStream();
+                HttpUtils.writeEmptyBody(messageOutputStream);
+            } catch (AxisFault e) {
+                LOG.error("Error occurred while writing the Ack to the client", e);
+            }
             return;
         }
 

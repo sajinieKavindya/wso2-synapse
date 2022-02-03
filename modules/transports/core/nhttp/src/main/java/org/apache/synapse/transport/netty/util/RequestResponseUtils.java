@@ -81,9 +81,9 @@ public class RequestResponseUtils {
 
         String transportName;
         if (sourceConfiguration.getScheme().isSSL()) {
-            transportName = BridgeConstants.TRANSPORT_NAME_HTTP;
-        } else {
             transportName = BridgeConstants.TRANSPORT_NAME_HTTPS;
+        } else {
+            transportName = BridgeConstants.TRANSPORT_NAME_HTTP;
         }
         ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
         msgCtx.setConfigurationContext(configurationContext);
@@ -114,6 +114,7 @@ public class RequestResponseUtils {
 
         // http transport header names are case insensitive
         Map<String, String> headers = new HashMap<>();
+        incomingCarbonMsg.getHeaders().forEach(entry -> headers.put(entry.getKey(), entry.getValue()));
         msgCtx.setProperty(MessageContext.TRANSPORT_HEADERS, headers);
 
         // Set the original incoming carbon message as a property
@@ -137,6 +138,10 @@ public class RequestResponseUtils {
         // a non-http client. In such cases, the message body will always be available in the
         // envelope itself. Hence, returning true.
         if (Objects.isNull(msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE))) {
+            return true;
+        }
+        if (msgContext.getEnvelope().getBody().getFirstElement() != null
+                || msgContext.isPropertyTrue(BridgeConstants.NO_ENTITY_BODY)) {
             return true;
         }
         return msgContext.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED);
@@ -406,7 +411,7 @@ public class RequestResponseUtils {
         OMElement httpsProtocolsEl = httpsProtocolsParam != null ? httpsProtocolsParam.getParameterElement() : null;
         Parameter sslParameter = transportIn.getParameter(BridgeConstants.SSL_PROTOCOL);
         String sslProtocol = sslParameter != null
-                ? sslParameter.getValue().toString() : BridgeConstants.DEFAULT_SSL_PROTOCOL;
+                ? sslParameter.getValue().toString() : BridgeConstants.TLS_PROTOCOL;
         populateProtocolConfigs(httpsProtocolsEl, sslProtocol, listenerConfiguration, serverParamList);
 
         // evaluate PreferredCiphers field
@@ -469,7 +474,6 @@ public class RequestResponseUtils {
                                                  SecretResolver secretResolver) throws AxisFault {
 
         String location = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.STORE_LOCATION);
-        // TODO: need to edit the transport-http to have a type for truststore
         String type = getValueOfElementWithLocalName(trustStoreEl, BridgeConstants.TYPE);
         OMElement storePasswordEl = trustStoreEl.getFirstChildWithName(new QName(BridgeConstants.PASSWORD));
         if (storePasswordEl == null) {
@@ -602,7 +606,7 @@ public class RequestResponseUtils {
         }
 
         if (Objects.isNull(sslProtocol) || sslProtocol.isEmpty()) {
-            sslProtocol = BridgeConstants.DEFAULT_SSL_PROTOCOL;
+            sslProtocol = BridgeConstants.TLS_PROTOCOL;
         }
         sslConfiguration.setSSLProtocol(sslProtocol);
     }

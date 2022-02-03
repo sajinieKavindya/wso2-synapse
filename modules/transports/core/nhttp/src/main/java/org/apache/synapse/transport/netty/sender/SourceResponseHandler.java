@@ -127,14 +127,14 @@ public class SourceResponseHandler {
     private static void setContentTypeHeader(HttpCarbonMessage outboundResponseMsg, MessageContext msgContext) {
 
         if (!canOutboundResponseHaveContentTypeHeader(msgContext)) {
-            outboundResponseMsg.removeHeader(Constants.Configuration.CONTENT_TYPE);
+            outboundResponseMsg.removeHeader(BridgeConstants.CONTENT_TYPE_HEADER);
             return;
         }
 
         if (shouldOverwriteOutboundResponseContentTypeHeader(msgContext)) {
             try {
                 String contentType = getContentTypeForOutboundResponse(msgContext);
-                outboundResponseMsg.setHeader(Constants.Configuration.CONTENT_TYPE, contentType);
+                outboundResponseMsg.setHeader(BridgeConstants.CONTENT_TYPE_HEADER, contentType);
             } catch (AxisFault axisFault) {
                 LOG.error("Error occurred while setting the Content-Type header. Hence, not overwriting the "
                         + "outbound response Content-Type Header");
@@ -423,11 +423,11 @@ public class SourceResponseHandler {
             throws AxisFault {
 
         if (hasNoResponseBodyToSend(msgCtx)) {
-            responseMsg.waitAndReleaseAllEntities();
-            responseMsg.completeMessage();
+            OutputStream messageOutputStream = HttpUtils.getHttpMessageDataStreamer(responseMsg).getOutputStream();
+            HttpUtils.writeEmptyBody(messageOutputStream);
         } else {
             if (RequestResponseUtils.shouldInvokeFormatterToWriteBody(msgCtx)) {
-                OutputStream messageOutputStream = HttpUtils.getResponseDataStreamer(responseMsg).getOutputStream();
+                OutputStream messageOutputStream = HttpUtils.getHttpMessageDataStreamer(responseMsg).getOutputStream();
                 MessageFormatter messageFormatter = MessageUtils.getMessageFormatter(msgCtx);
                 HttpUtils.serializeDataUsingMessageFormatter(msgCtx, messageFormatter, messageOutputStream);
             } else {

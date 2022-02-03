@@ -48,7 +48,11 @@ public class NettyConfiguration {
     public static final String HTTP_WORKER_THREAD_GROUP_NAME = "HTTP Worker Thread Group";
     public static final String HTTP_WORKER_THREAD_ID = "HTTPWorker";
 
+    public static final String REVERSE_PROXY_MODE_SYSTEM_PROPERTY = "reverseProxyMode";
+
     private Boolean isKeepAliveDisabled = null;
+
+    private Boolean reverseProxyMode = null;
 
     private Properties props;
 
@@ -230,6 +234,18 @@ public class NettyConfiguration {
 
         return ConfigurationBuilderUtil.getStringProperty(NettyConfigPropertyNames.HTTP_RESPONSE_HEADERS_PRESERVE,
                 "", props);
+    }
+
+    /**
+     * Check for reverse proxy mode.
+     *
+     * @return whether reverse proxy mode is enabled
+     */
+    public boolean isReverseProxyMode() {
+        if (reverseProxyMode == null) {
+            reverseProxyMode = Boolean.parseBoolean(System.getProperty(REVERSE_PROXY_MODE_SYSTEM_PROPERTY));
+        }
+        return reverseProxyMode;
     }
 
     public boolean isForcedMessageBuildEnabled() {

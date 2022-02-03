@@ -46,7 +46,6 @@ import org.apache.synapse.transport.netty.BridgeConstants;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import javax.xml.stream.XMLStreamException;
 
@@ -58,7 +57,6 @@ public class DeferredMessageBuilder {
     private static final Log LOG = LogFactory.getLog(DeferredMessageBuilder.class);
 
     public static final String RELAY_FORMATTERS_MAP = "__RELAY_FORMATTERS_MAP";
-    public static final String FORCED_RELAY_FORMATTER = "__FORCED_RELAY_FORMATTER";
 
     private Map<String, Builder> builders = new HashMap<String, Builder>();
     private Map<String, MessageFormatter> formatters = new HashMap<String, MessageFormatter>();
@@ -104,10 +102,8 @@ public class DeferredMessageBuilder {
     public OMElement getDocument(MessageContext msgCtx, InputStream in) throws
             XMLStreamException, IOException {
 
-        /**
-         * HTTP Delete requests may contain entity body or not. Hence if the request is a HTTP DELETE, we have to verify
-         * that the payload stream is empty or not.
-         */
+        // HTTP Delete requests may contain entity body or not. Hence if the request is a HTTP DELETE, we have to verify
+        // that the payload stream is empty or not.
         if (HTTPConstants.HEADER_DELETE.equals(msgCtx.getProperty(Constants.Configuration.HTTP_METHOD)) &&
                 MessageUtils.isEmptyPayloadStream(in)) {
             msgCtx.setProperty(BridgeConstants.NO_ENTITY_BODY, Boolean.TRUE);
@@ -120,7 +116,7 @@ public class DeferredMessageBuilder {
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
 
         String contentLength = null;
-        String transferEncoded = null;
+        String transferEncoded;
         if (transportHeaders != null) {
             contentLength = (String) transportHeaders.get(BridgeConstants.CONTENT_LEN);
             transferEncoded = (String) transportHeaders.get(BridgeConstants.TRANSFER_ENCODING);
@@ -130,7 +126,6 @@ public class DeferredMessageBuilder {
                     && transferEncoded == null) {
                 msgCtx.setProperty(BridgeConstants.NO_ENTITY_BODY, true);
                 msgCtx.setProperty(Constants.Configuration.CONTENT_TYPE, "");
-                // msgCtx.setProperty(BridgeConstants.RELAY_EARLY_BUILD, true);
                 return new SOAP11Factory().getDefaultEnvelope();
             }
         }
@@ -200,77 +195,6 @@ public class DeferredMessageBuilder {
             msgCtx.setProperty(Constants.Configuration.CONTENT_TYPE, contentType);
         }
         return element;
-    }
-
-    private Builder getBuilderForContentType(String contentType) {
-
-        String type;
-        int index = contentType.indexOf(';');
-        if (index > 0) {
-            type = contentType.substring(0, index);
-        } else {
-            type = contentType;
-        }
-
-        Builder builder = builders.get(type);
-
-        if (builder == null) {
-            builder = builders.get(type.toLowerCase());
-        }
-
-        if (builder == null) {
-            Iterator<Map.Entry<String, Builder>> iterator = builders.entrySet().iterator();
-            while (iterator.hasNext() && builder == null) {
-                Map.Entry<String, Builder> entry = iterator.next();
-                String key = entry.getKey();
-                if (contentType.matches(key)) {
-                    builder = entry.getValue();
-                }
-            }
-        }
-        return builder;
-    }
-
-    public static Builder createBuilder(String className) throws AxisFault {
-
-        try {
-            Class c = Class.forName(className);
-            Object o = c.newInstance();
-            if (o instanceof Builder) {
-                return (Builder) o;
-            }
-        } catch (ClassNotFoundException e) {
-            handleException("Builder class not found :" +
-                    className, e);
-        } catch (IllegalAccessException | InstantiationException e) {
-            handleException("Cannot initiate Builder class :" +
-                    className, e);
-        }
-        return null;
-    }
-
-    public static MessageFormatter createFormatter(String className) throws AxisFault {
-
-        try {
-            Class c = Class.forName(className);
-            Object o = c.newInstance();
-            if (o instanceof MessageFormatter) {
-                return (MessageFormatter) o;
-            }
-        } catch (ClassNotFoundException e) {
-            handleException("MessageFormatter class not found :" +
-                    className, e);
-        } catch (IllegalAccessException | InstantiationException e) {
-            handleException("Cannot initiate MessageFormatter class :" +
-                    className, e);
-        }
-        return null;
-    }
-
-    private static void handleException(String message, Exception e) throws AxisFault {
-
-        LOG.error(message, e);
-        throw new AxisFault(message, e);
     }
 
     /**

@@ -139,7 +139,7 @@ public class BridgeConstants {
     public static final String CIPHERS = "ciphers";
     public static final String CACHE_SIZE = "CacheSize";
     public static final String CACHE_DELAY = "CacheDelay";
-    public static final String DEFAULT_SSL_PROTOCOL = "TLS";
+    public static final String TLS_PROTOCOL = "TLS";
 
     //Http method type constants to be used in synapse
     public static final String HTTP_HEAD = "HEAD";

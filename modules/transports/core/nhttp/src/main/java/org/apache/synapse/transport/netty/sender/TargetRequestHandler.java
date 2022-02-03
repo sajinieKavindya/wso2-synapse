@@ -44,6 +44,7 @@ import org.apache.synapse.transport.nhttp.util.MessageFormatterDecoratorFactory;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.util.PassThroughTransportUtils;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
+import org.apache.synapse.transport.passthru.util.TargetRequestFactory;
 import org.wso2.transport.http.netty.contract.Constants;
 import org.wso2.transport.http.netty.contract.HttpClientConnector;
 import org.wso2.transport.http.netty.contract.HttpResponseFuture;
@@ -193,6 +194,17 @@ public class TargetRequestHandler {
             throws AxisFault {
 
         Map transportHeaders = (Map) msgCtx.getProperty(MessageContext.TRANSPORT_HEADERS);
+
+        if (transportHeaders != null) {
+            String trpContentType = (String) transportHeaders.get(HTTP.CONTENT_TYPE);
+            if (trpContentType != null && !trpContentType.equals("")) {
+                if (!TargetRequestFactory.isMultipartContent(trpContentType) && !msgCtx.isDoingSwA()) {
+                    outboundRequest.setHeader(HTTP.CONTENT_TYPE, trpContentType);
+                    return;
+                }
+            }
+        }
+
         String cType = getContentType(msgCtx,
                 targetConfiguration.isPreserveHttpHeader(HTTP.CONTENT_TYPE), transportHeaders);
         if (cType != null
@@ -235,9 +247,9 @@ public class TargetRequestHandler {
 
         String setEncoding = (String) msgCtx.getProperty(PassThroughConstants.SET_CHARACTER_ENCODING);
 
-        //If incoming transport isn't HTTP, transport headers can be null. Therefore null check is required
+        // If incoming transport isn't HTTP, transport headers can be null. Therefore null check is required
         // and if headers not null check whether request comes with Content-Type header before preserving Content-Type
-        //Need to avoid this for multipart headers, need to add MIME Boundary property
+        // Need to avoid this for multipart headers, need to add MIME Boundary property
         if (trpHeaders != null
                 && (trpHeaders).get(HTTPConstants.HEADER_CONTENT_TYPE) != null
                 && (isContentTypePreservedHeader || PassThroughConstants.VALUE_FALSE.equals(setEncoding))
@@ -428,11 +440,11 @@ public class TargetRequestHandler {
             throws AxisFault {
 
         if (ignoreMessageBody(msgCtx)) {
-            responseMsg.waitAndReleaseAllEntities();
-            responseMsg.completeMessage();
+            OutputStream messageOutputStream = HttpUtils.getHttpMessageDataStreamer(responseMsg).getOutputStream();
+            HttpUtils.writeEmptyBody(messageOutputStream);
         } else {
             if (RequestResponseUtils.shouldInvokeFormatterToWriteBody(msgCtx)) {
-                HttpMessageDataStreamer outboundMsgDataStreamer = HttpUtils.getResponseDataStreamer(responseMsg);
+                HttpMessageDataStreamer outboundMsgDataStreamer = HttpUtils.getHttpMessageDataStreamer(responseMsg);
                 OutputStream messageOutputStream = outboundMsgDataStreamer.getOutputStream();
                 MessageFormatter messageFormatter =
                         MessageFormatterDecoratorFactory.createMessageFormatterDecorator(msgCtx);
