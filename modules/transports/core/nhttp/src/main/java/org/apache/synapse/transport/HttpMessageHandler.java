@@ -67,7 +67,7 @@ public class HttpMessageHandler implements MessageHandler {
     @Override
     public void buildMessage(MessageContext messageContext) throws IOException {
 
-        MessageUtils.buildMessage(messageContext, false);
+        MessageUtils.buildMessage(messageContext);
     }
 
     @Override

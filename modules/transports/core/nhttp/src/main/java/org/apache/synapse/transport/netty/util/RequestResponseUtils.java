@@ -48,8 +48,6 @@ import org.wso2.transport.http.netty.contract.config.InboundMsgSizeValidationCon
 import org.wso2.transport.http.netty.contract.config.ListenerConfiguration;
 import org.wso2.transport.http.netty.contract.config.SslConfiguration;
 import org.wso2.transport.http.netty.message.HttpCarbonMessage;
-import org.wso2.transport.http.netty.message.HttpMessageDataStreamer;
-import org.wso2.transport.http.netty.message.PooledDataStreamerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -88,7 +86,7 @@ public class RequestResponseUtils {
         ConfigurationContext configurationContext = sourceConfiguration.getConfigurationContext();
         msgCtx.setConfigurationContext(configurationContext);
         msgCtx.setTransportOut(configurationContext.getAxisConfiguration().getTransportOut(transportName));
-        msgCtx.setTransportIn(configurationContext.getAxisConfiguration().getTransportIn(transportName));
+        msgCtx.setTransportIn(sourceConfiguration.getInDescription());
         msgCtx.setIncomingTransportName(transportName);
         msgCtx.setServerSide(true);
 
@@ -125,6 +123,17 @@ public class RequestResponseUtils {
     }
 
     /**
+     * Check if the HTTP_CARBON_MESSAGE is present in the message context.
+     *
+     * @param msgContext axis2 message context
+     * @return true if HTTP_CARBON_MESSAGE is present in the message context, false otherwise
+     */
+    public static boolean isHttpCarbonMessagePresent(MessageContext msgContext) {
+
+        return Objects.nonNull(msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE));
+    }
+
+    /**
      * Checks if the request/response body should be written using the appropriate message
      * formatter.
      *
@@ -137,7 +146,7 @@ public class RequestResponseUtils {
         // If the property HTTP_CARBON_MESSAGE is null, it means the message was initiated from
         // a non-http client. In such cases, the message body will always be available in the
         // envelope itself. Hence, returning true.
-        if (Objects.isNull(msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE))) {
+        if (!RequestResponseUtils.isHttpCarbonMessagePresent(msgContext)) {
             return true;
         }
         if (msgContext.getEnvelope().getBody().getFirstElement() != null
@@ -145,25 +154,6 @@ public class RequestResponseUtils {
             return true;
         }
         return msgContext.isPropertyTrue(BridgeConstants.MESSAGE_BUILDER_INVOKED);
-    }
-
-    /**
-     * Get the response data streamer that should be used for serializing data.
-     *
-     * @param outboundResponse Represents native response
-     * @return HttpMessageDataStreamer that should be used for serializing
-     */
-    public static HttpMessageDataStreamer getHttpMessageDataStreamer(HttpCarbonMessage outboundResponse) {
-
-        final HttpMessageDataStreamer outboundMsgDataStreamer;
-        final PooledDataStreamerFactory pooledDataStreamerFactory = (PooledDataStreamerFactory)
-                outboundResponse.getProperty(BridgeConstants.POOLED_BYTE_BUFFER_FACTORY);
-        if (pooledDataStreamerFactory != null) {
-            outboundMsgDataStreamer = pooledDataStreamerFactory.createHttpDataStreamer(outboundResponse);
-        } else {
-            outboundMsgDataStreamer = new HttpMessageDataStreamer(outboundResponse);
-        }
-        return outboundMsgDataStreamer;
     }
 
     /**

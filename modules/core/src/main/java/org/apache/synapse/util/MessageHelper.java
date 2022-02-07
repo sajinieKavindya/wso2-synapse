@@ -45,12 +45,12 @@ import org.apache.synapse.debug.constants.SynapseDebugCommandConstants;
 import org.apache.synapse.debug.constructs.SynapseMediationFlowPoint;
 import org.apache.synapse.mediators.eip.EIPConstants;
 import org.apache.synapse.mediators.template.TemplateContext;
+import org.apache.synapse.transport.MessageHandlerProvider;
 import org.apache.synapse.transport.http.conn.SynapseDebugInfoHolder;
 import org.apache.synapse.transport.http.conn.SynapseWireLogHolder;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.config.SourceConfiguration;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
 
 import javax.xml.stream.XMLStreamException;
 import java.io.IOException;
@@ -388,7 +388,7 @@ public class MessageHelper {
         //building the message payload since buffer can not be cloned. otherwise cloned message will have
         //empty buffer in PASS_THROUGH_PIPE without the message payload.
         try {
-            RelayUtils.buildMessage(mc, false);
+            MessageHandlerProvider.getMessageHandler(mc).buildMessage(mc, false);
         } catch (IOException e) {
             handleException(e);
         } catch (XMLStreamException e) {

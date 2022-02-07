@@ -351,7 +351,7 @@ public class HttpRequestWorker implements Runnable {
 
         outboundResponse.setHeader(HTTP.CONTENT_TYPE, contentType);
         try (OutputStream outputStream =
-                     RequestResponseUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
+                     HttpUtils.getHttpMessageDataStreamer(outboundResponse).getOutputStream()) {
             outputStream.write(content.getBytes());
         } catch (IOException ioException) {
             LOG.error("Error occurred while writing the response body to the client", ioException);

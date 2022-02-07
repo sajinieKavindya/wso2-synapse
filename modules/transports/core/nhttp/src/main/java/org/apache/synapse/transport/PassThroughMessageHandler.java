@@ -74,7 +74,7 @@ public class PassThroughMessageHandler implements MessageHandler {
                 try {
                     bufferedInputStream.reset();
                     context.setProperty(PassThroughConstants.BUFFERED_INPUT_STREAM, bufferedInputStream);
-                    RelayUtils.buildMessage(context);
+                    MessageHandlerProvider.getMessageHandler(context).buildMessage(context);
                 } catch (Exception e) {
                     LOG.error("Error while building message", e);
                 }
@@ -95,7 +95,7 @@ public class PassThroughMessageHandler implements MessageHandler {
 
     @Override
     public void buildMessage(MessageContext messageContext) throws XMLStreamException, IOException {
-        RelayUtils.buildMessage(messageContext, false);
+        RelayUtils.buildMessage(messageContext);
     }
 
     @Override

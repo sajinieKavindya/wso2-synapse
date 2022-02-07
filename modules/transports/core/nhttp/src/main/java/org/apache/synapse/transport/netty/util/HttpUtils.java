@@ -258,18 +258,6 @@ public class HttpUtils {
         }
     }
 
-    /**
-     * Check whether the content type is multipart or not.
-     *
-     * @param contentType Content-Type of the
-     * @return true for multipart content types
-     */
-    public static boolean isMultipartContent(String contentType) {
-
-        return contentType.contains(HTTPConstants.MEDIA_TYPE_MULTIPART_FORM_DATA)
-                || contentType.contains(HTTPConstants.HEADER_ACCEPT_MULTIPART_RELATED);
-    }
-
     public static boolean isGETRequest(MessageContext msgCtx) {
 
         Object httpMethod = msgCtx.getProperty(BridgeConstants.HTTP_METHOD);

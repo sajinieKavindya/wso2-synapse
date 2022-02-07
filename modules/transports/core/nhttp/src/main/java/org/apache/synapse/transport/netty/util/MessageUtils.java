@@ -53,7 +53,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import java.util.Objects;
 import javax.xml.stream.XMLStreamException;
 
 /**
@@ -79,8 +78,7 @@ public class MessageUtils {
         forceJSONValidation = NettyConfiguration.getInstance().isForcedJSONMessageValidationEnabled();
     }
 
-    public static void buildMessage(MessageContext msgCtx)
-            throws IOException, XMLStreamException {
+    public static void buildMessage(MessageContext msgCtx) throws IOException {
 
         buildMessage(msgCtx, false);
     }
@@ -100,7 +98,7 @@ public class MessageUtils {
             return;
         }
 
-        if (Objects.isNull(msgCtx.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE)) || !forceMessageBuild) {
+        if (!RequestResponseUtils.isHttpCarbonMessagePresent(msgCtx) || !forceMessageBuild) {
             return;
         }
 

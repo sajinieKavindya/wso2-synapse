@@ -1,15 +1,14 @@
 package org.apache.synapse.commons.handlers;
 
 /**
- * Message holder for inbound requests and messages.
+ * Message holder for inbound request info.
  */
-public class MessageHolder {
+public class MessageInfo {
 
     /**
      * The message to be passed to the handler implementations to perform message
      * handling. This is in Object type since there are variety of message types in
-     * different protocols. For example, the WebSocket handshake is a type of
-     * FullHttpRequest while the WebSocket message is a type of WebSocketFrame.
+     * different protocols.
      */
     private Object message;
 
@@ -20,7 +19,7 @@ public class MessageHolder {
 
     public ConnectionId connectionId;
 
-    public MessageHolder(Object message, Protocol protocol, ConnectionId connectionId) {
+    public MessageInfo(Object message, Protocol protocol, ConnectionId connectionId) {
 
         this.message = message;
         this.protocol = protocol;

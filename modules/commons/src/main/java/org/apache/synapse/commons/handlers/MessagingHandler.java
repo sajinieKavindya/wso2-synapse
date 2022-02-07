@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
  *
  * WSO2 Inc. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -25,28 +25,11 @@ import org.apache.axis2.context.MessageContext;
 public interface MessagingHandler {
 
     /**
-     * Handle source request.
-     *
-     * This method handles the inbound requests that come with request headers.
-     * For example, WebSocket handshake request comes as a HTTP upgrade request
-     * with headers and the message body comes as a WebSocket frame. In such scenarios,
-     * this method can be invoked to handle the WebSocket handshake.
+     * Handle request.
      *
      * @param axis2MessageContext axis2 message context.
      */
-    HandlerResponse handleSourceRequest(MessageContext axis2MessageContext);
-
-    /**
-     * Handle Source Message.
-     *
-     * This method handles the entity body of the inbound request.
-     * For example, WebSocket handshake request comes as a HTTP upgrade request and
-     * the message body comes as a WebSocket frame. In such scenarios, this method
-     * can be invoked to handle the WebSocket frame that represent the actual message.
-     *
-     * @param axis2MessageContext axis2 message context.
-     */
-    HandlerResponse handleSourceMessage(MessageContext axis2MessageContext);
+    HandlerResponse handleRequest(MessageContext axis2MessageContext);
 
     /**
      * Handle Error.
@@ -65,6 +48,6 @@ public interface MessagingHandler {
      *
      * @param connectionId Identifier of the connection.
      */
-    void dispose(ConnectionId connectionId);
+    void destroy(ConnectionId connectionId);
 
 }

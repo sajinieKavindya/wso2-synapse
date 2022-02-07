@@ -23,9 +23,9 @@ import org.apache.axis2.addressing.AddressingConstants;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.SynapseConstants;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.transport.MessageHandlerProvider;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.json.JSONObject;
 
 import java.util.Objects;
@@ -92,7 +92,7 @@ public class DefaultEndpoint extends AbstractEndpoint {
                 && !Boolean.TRUE.equals(messageContext.getProperty(PassThroughConstants.MESSAGE_BUILDER_INVOKED))
                 && messageContext.getProperty("To") == null) {
             try {
-	            RelayUtils.buildMessage(((Axis2MessageContext) synCtx).getAxis2MessageContext(),false);
+                MessageHandlerProvider.getMessageHandler(messageContext).buildMessage(messageContext, false);
             } catch (Exception e) {
                  handleException("Error while building message", e, synCtx);
             }

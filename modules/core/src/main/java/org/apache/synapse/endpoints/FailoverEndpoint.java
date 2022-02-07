@@ -31,15 +31,13 @@ import org.apache.synapse.aspects.flow.statistics.collectors.RuntimeStatisticCol
 import org.apache.synapse.config.SynapsePropertiesLoader;
 import org.apache.synapse.core.SynapseEnvironment;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.transport.MessageHandlerProvider;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import javax.xml.stream.XMLStreamException;
@@ -327,7 +325,9 @@ public class FailoverEndpoint extends AbstractEndpoint {
      */
     private void buildMessage(MessageContext synCtx) {
         try {
-            RelayUtils.buildMessage(((Axis2MessageContext) synCtx).getAxis2MessageContext());
+            org.apache.axis2.context.MessageContext axis2MsgCtx =
+                    ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+            MessageHandlerProvider.getMessageHandler(axis2MsgCtx).buildMessage(axis2MsgCtx);
         } catch (IOException | XMLStreamException ex) {
             handleException("Error while building the message", ex, synCtx);
         }

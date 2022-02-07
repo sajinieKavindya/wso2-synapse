@@ -7,10 +7,10 @@ import org.apache.commons.logging.Log;
 import org.apache.synapse.MessageContext;
 import org.apache.synapse.SynapseException;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.transport.MessageHandlerProvider;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
 import org.apache.synapse.transport.passthru.config.PassThroughConfiguration;
-import org.apache.synapse.transport.passthru.util.RelayUtils;
 import org.apache.synapse.util.streaming_xpath.custom.components.ParserComponent;
 import org.apache.synapse.util.xpath.DOMSynapseXPathNamespaceMap;
 import org.apache.synapse.util.xpath.SynapseJsonPath;
@@ -172,7 +172,7 @@ public abstract class SynapsePath extends AXIOMXPath {
                 try {
                     bufferedInputStream.reset();
                     context.setProperty(PassThroughConstants.BUFFERED_INPUT_STREAM, bufferedInputStream);
-                    RelayUtils.buildMessage(context);
+					MessageHandlerProvider.getMessageHandler(context).buildMessage(context);
                 } catch (Exception e) {
                     log.error("Error while building message", e);
                 }

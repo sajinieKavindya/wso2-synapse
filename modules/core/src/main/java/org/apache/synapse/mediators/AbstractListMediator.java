@@ -34,6 +34,7 @@ import org.apache.synapse.aspects.flow.statistics.data.artifact.ArtifactHolder;
 import org.apache.synapse.config.SynapsePropertiesLoader;
 import org.apache.synapse.core.SynapseEnvironment;
 import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.transport.MessageHandlerProvider;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.util.RelayUtils;
 
@@ -149,7 +150,9 @@ public abstract class AbstractListMediator extends AbstractMediator
             if (synLog.isTraceOrDebugEnabled()) {
                 synLog.traceOrDebug("Building message. Sequence <" + getType() + "> is content aware");
             }
-            RelayUtils.buildMessage(((Axis2MessageContext) synCtx).getAxis2MessageContext(), false);
+            org.apache.axis2.context.MessageContext axis2MsgCtx =
+                    ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+            MessageHandlerProvider.getMessageHandler(axis2MsgCtx).buildMessage(axis2MsgCtx, false);
         } catch (Exception e) {
             handleException("Error while building message. " + e.getMessage(), e, synCtx);
         }

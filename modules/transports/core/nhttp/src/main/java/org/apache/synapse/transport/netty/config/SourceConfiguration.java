@@ -31,6 +31,7 @@ import org.apache.synapse.transport.netty.BridgeConstants;
 
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * This class stores the configurations specific to the Listener.
@@ -89,7 +90,7 @@ public class SourceConfiguration extends BaseConfiguration {
 
     private void populateHostname() {
         Parameter hostParameter = inDescription.getParameter(BridgeConstants.HOSTNAME_PARAM);
-        if (hostParameter != null) {
+        if (Objects.nonNull(hostParameter) && Objects.nonNull(hostParameter.getValue())) {
             host = ((String) hostParameter.getValue()).trim();
         } else if (conf.getListenerHostname() != null) {
             host = conf.getListenerHostname().trim();
@@ -105,7 +106,7 @@ public class SourceConfiguration extends BaseConfiguration {
 
     private void populateHTTPProtocol() {
         Parameter protocolParameter = inDescription.getParameter(BridgeConstants.HTTP_PROTOCOL_VERSION_PARAM);
-        if (protocolParameter != null) {
+        if (Objects.nonNull(protocolParameter) && Objects.nonNull(protocolParameter.getValue())) {
             String protocol = ((String) protocolParameter.getValue()).trim();
             if (!protocol.isEmpty()) {
                 this.protocol = protocol;

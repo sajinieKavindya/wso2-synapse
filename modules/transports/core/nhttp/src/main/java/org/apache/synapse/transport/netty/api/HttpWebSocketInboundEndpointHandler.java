@@ -91,7 +91,7 @@ public class HttpWebSocketInboundEndpointHandler {
             // Generate the TransportInDescription and add it to the ConfigurationContext
             transportInDescription = createTransportInDescription(transportName, transportListener,
                     httpWebSocketConfig);
-            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
+//            configurationContext.getAxisConfiguration().addTransportIn(transportInDescription);
         } catch (AxisFault e) {
             logStartupError(e, "Error occurred while generating TransportInDescription. Hence, ",
                     httpWebSocketConfig, transportName);

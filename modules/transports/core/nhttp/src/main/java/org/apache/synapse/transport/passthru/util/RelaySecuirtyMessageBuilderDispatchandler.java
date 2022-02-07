@@ -38,13 +38,14 @@ import org.apache.axis2.transport.http.HTTPConstants;
 import org.apache.axis2.util.Utils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.synapse.transport.MessageHandlerProvider;
+import org.apache.synapse.transport.netty.util.RequestResponseUtils;
 import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.transport.passthru.Pipe;
 
 import javax.xml.namespace.QName;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Objects;
 
 public class RelaySecuirtyMessageBuilderDispatchandler  extends AbstractDispatcher{
 
@@ -66,7 +67,7 @@ public class RelaySecuirtyMessageBuilderDispatchandler  extends AbstractDispatch
 
 		Pipe pipe = (Pipe) messageContext.getProperty(PassThroughConstants.PASS_THROUGH_PIPE);
 		
-		if (pipe != null || Objects.nonNull(messageContext.getProperty("HTTP_CARBON_MESSAGE"))) {
+		if (pipe != null || RequestResponseUtils.isHttpCarbonMessagePresent(messageContext)) {
 			if (toEPR != null) {
 
 				ConfigurationContext configurationContext = messageContext.getConfigurationContext();
@@ -188,7 +189,7 @@ public class RelaySecuirtyMessageBuilderDispatchandler  extends AbstractDispatch
 
 	private void build(MessageContext messageContext) {
 	    try {
-	    	RelayUtils.buildMessage(messageContext, false);
+			MessageHandlerProvider.getMessageHandler(messageContext).buildMessage(messageContext, false);
             if (messageContext.getEnvelope().getHeader() == null) {
                 SOAPFactory fac =
                         messageContext.isSOAP11() ? OMAbstractFactory.getSOAP11Factory()

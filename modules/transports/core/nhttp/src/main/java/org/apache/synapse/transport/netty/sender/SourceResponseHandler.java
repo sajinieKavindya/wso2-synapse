@@ -46,7 +46,6 @@ import org.wso2.transport.http.netty.message.HttpCarbonMessage;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Objects;
-import javax.xml.stream.XMLStreamException;
 
 /**
  * {@code SourceResponseHandler} have utilities for creating and preparing an outbound response to be sent
@@ -90,8 +89,6 @@ public class SourceResponseHandler {
                 MessageUtils.buildMessage(msgCtx);
             } catch (IOException e) {
                 RequestResponseUtils.handleException("IO Error occurred while building the message", e);
-            } catch (XMLStreamException e) {
-                RequestResponseUtils.handleException("XML Error occurred while building the message", e);
             }
         }
     }
@@ -148,9 +145,8 @@ public class SourceResponseHandler {
         // If it is an http and if the request has been built, we need to overwrite the Content-Type header.
         // Or else, if the http request was a pass through one, we do not need to modify the
         // Content-Type header.
-        Object httpCarbonMessage = msgContext.getProperty(BridgeConstants.HTTP_CARBON_MESSAGE);
-        if (Objects.nonNull(httpCarbonMessage)) {
-            return !isPassThroughHttp(msgContext);
+        if (RequestResponseUtils.isHttpCarbonMessagePresent(msgContext)) {
+            return !isPassThroughMessage(msgContext);
         }
         return true;
     }
@@ -218,7 +214,7 @@ public class SourceResponseHandler {
      *
      * @return true if it is a pass through.
      */
-    public static boolean isPassThroughHttp(MessageContext msgContext) {
+    public static boolean isPassThroughMessage(MessageContext msgContext) {
 
         boolean builderInvoked = Boolean.TRUE.equals(
                 msgContext.getProperty(BridgeConstants.MESSAGE_BUILDER_INVOKED));
@@ -382,8 +378,6 @@ public class SourceResponseHandler {
                 MessageUtils.buildMessage(msgCtx);
             } catch (IOException e) {
                 RequestResponseUtils.handleException("IO Error occurred while building the message", e);
-            } catch (XMLStreamException e) {
-                RequestResponseUtils.handleException("XML Error occurred while building the message", e);
             }
             String hash = CachingConstants.DEFAULT_XML_IDENTIFIER.getDigest(msgCtx);
             outboundResponseMsg.setHeader(BridgeConstants.ETAG_HEADER, "\"" + hash + "\"");

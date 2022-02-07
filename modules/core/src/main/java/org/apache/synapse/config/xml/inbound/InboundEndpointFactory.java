@@ -36,12 +36,11 @@ import org.apache.synapse.config.xml.rest.APIFactory;
 import org.apache.synapse.inbound.InboundEndpoint;
 import org.apache.synapse.inbound.InboundEndpointConstants;
 
-import org.apache.synapse.inbound.InboundEndpointHandler;
-import org.apache.synapse.rest.Handler;
 import sun.util.logging.resources.logging;
 
 import javax.xml.namespace.QName;
 import java.util.Iterator;
+import java.util.Objects;
 
 public class InboundEndpointFactory {
 
@@ -177,6 +176,13 @@ public class InboundEndpointFactory {
                 OMElement handler = (OMElement) handlers.next();
                 String handlerClass = handler.getAttributeValue(new QName(
                         InboundEndpointConstants.INBOUND_ENDPOINT_CLASS));
+
+                if (Objects.isNull(handlerClass) || handlerClass.isEmpty()) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Class name of the Inbound Endpoint handler has not been configured or is empty");
+                    }
+                    continue;
+                }
 
                 try {
                     Class clazz = APIFactory.class.getClassLoader().loadClass(handlerClass);
