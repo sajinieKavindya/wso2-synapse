@@ -41,6 +41,7 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 public class StartUpController extends AbstractStartup {
@@ -88,6 +89,39 @@ public class StartUpController extends AbstractStartup {
 
     public void destroy() {
         destroy(true);
+    }
+
+    public boolean deactivateTask() {
+        if (!synapseTaskManager.isInitialized()) {
+            return false;
+        }
+        TaskScheduler taskScheduler = synapseTaskManager.getTaskScheduler();
+        if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
+            return false;
+        }
+        if (taskScheduler.isTaskDeactivated(taskDescription.getName())) {
+            logger.info("The task [" + taskDescription.getName() + "] is already deactivated");
+            return true;
+        } else {
+            return taskScheduler.pauseTask(taskDescription.getName());
+        }
+    }
+
+    public boolean activateTask() {
+        if (!synapseTaskManager.isInitialized()) {
+            return false;
+        }
+        TaskScheduler taskScheduler = synapseTaskManager.getTaskScheduler();
+        if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
+            return false;
+        }
+        if (taskScheduler.isTaskAlreadyRunning(taskDescription.getName())
+                || taskScheduler.isTaskBlocked(taskDescription.getName())) {
+            logger.info("The task [" + taskDescription.getName() + "] is already active");
+            return true;
+        } else {
+            return taskScheduler.resumeTask(taskDescription.getName());
+        }
     }
 
     public void init(SynapseEnvironment synapseEnvironment) {
@@ -219,11 +253,14 @@ public class StartUpController extends AbstractStartup {
         String taskImplClassName = taskDescription.getTaskImplClassName();
         if (taskImplClassName == null || taskImplClassName.isEmpty()) {
             taskImplClassName = "org.apache.synapse.startup.tasks.MessageInjector";
+            taskDescription.setTaskImplClassName(taskImplClassName);
         }
-        taskDescription.setTaskImplClassName(taskImplClassName);
         try {
-            task = getClass().getClassLoader().loadClass(
-                    taskDescription.getTaskImplClassName()).newInstance();
+            task = taskDescription.getResource(TaskDescription.INSTANCE);
+            if (Objects.isNull(task)) {
+                task = getClass().getClassLoader().loadClass(
+                        taskDescription.getTaskImplClassName()).newInstance();
+            }
             if (!(task instanceof Task)) {
                 logger.warn("Task implementation is not a Synapse Task.");
             }

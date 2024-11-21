@@ -30,6 +30,7 @@ import org.apache.synapse.aspects.flow.statistics.data.artifact.ArtifactHolder;
 import org.apache.synapse.commons.handlers.MessagingHandler;
 import org.apache.synapse.core.SynapseEnvironment;
 import org.apache.synapse.mediators.Value;
+import org.apache.synapse.registry.Registry;
 import org.apache.synapse.util.xpath.SynapseXPath;
 import org.jaxen.JaxenException;
 import org.wso2.securevault.SecretResolver;
@@ -59,12 +60,14 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private boolean isSuspend;
     private String injectingSeq;
     private String onErrorSeq;
+    private boolean active;
     private Map<String, String> parametersMap = new LinkedHashMap<String, String>();
     private Map<String, String> parameterKeyMap = new LinkedHashMap<String, String>();
     private List<MessagingHandler> handlers = new ArrayList();
     private String fileName;
     private SynapseEnvironment synapseEnvironment;
     private InboundRequestProcessor inboundRequestProcessor;
+    private Registry registry;
     /** car file name which this endpoint deployed from */
     private String artifactContainerName;
     /** Whether the deployed inbound endpoint is edited via the management console */
@@ -72,14 +75,23 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private AspectConfiguration aspectConfiguration;
     /** regex for any vault expression */
     private static final String secureVaultRegex = "\\{(.*?):vault-lookup\\('(.*?)'\\)\\}";
+    private static final String REG_INBOUND_ENDPOINT_BASE_PATH = "/repository/components/org.apache.synapse.inbound/";
+    private static final String INBOUND_ENDPOINT_STATE = "INBOUND_ENDPOINT_STATE";
 
     public void init(SynapseEnvironment se) {
         log.info("Initializing Inbound Endpoint: " + getName());
         synapseEnvironment = se;
-        if(isSuspend){
-      	  log.info("Inbound endpoint " + name + " is currently suspended.");
-      	  return;
-        }
+        registry = se.getSynapseConfiguration().getRegistry();
+        isSuspend = shouldInboundEndpointStartAsDeactivated();
+//        if(isSuspend){
+//      	  log.info("Inbound endpoint " + name + " is currently suspended.");
+//      	  return;
+//        }
+        initializeInboundRequestProcessor();
+
+    }
+
+    private void initializeInboundRequestProcessor() {
         inboundRequestProcessor = getInboundRequestProcessor();
         if (inboundRequestProcessor != null) {
             try {
@@ -91,7 +103,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
             }
         } else {
             String msg = "Inbound Request processor not found for Inbound EP : " + name +
-                         " Protocol: " + protocol + " Class" + classImpl;
+                    " Protocol: " + protocol + " Class" + classImpl;
             log.error(msg);
             throw new SynapseException(msg);
         }
@@ -140,6 +152,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         inboundProcessorParams.setInjectingSeq(injectingSeq);
         inboundProcessorParams.setOnErrorSeq(onErrorSeq);
         inboundProcessorParams.setSynapseEnvironment(synapseEnvironment);
+        inboundProcessorParams.setSuspend(isSuspend);
 
         Properties props = Utils.paramsToProperties(parametersMap);
         //replacing values by secure vault
@@ -230,6 +243,30 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
 
     public void setOnErrorSeq(String onErrorSeq) {
         this.onErrorSeq = onErrorSeq;
+    }
+
+    public synchronized void activate() {
+        if (!isSuspend()) {
+            log.info("Inbound Endpoint [" + getName() + "] is already activated");
+            return;
+        }
+        if (this.inboundRequestProcessor.activate()) {
+            setSuspend(false);
+            setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+            log.info("Successfully activated the Inbound Endpoint [" + getName() + "]");
+        }
+    }
+
+    public synchronized void deactivate() {
+        if (isSuspend()) {
+            log.info("Inbound Endpoint [" + getName() + "] is already deactivated");
+            return;
+        }
+        if (this.inboundRequestProcessor.deactivate()) {
+            setSuspend(true);
+            setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
+            log.info("Successfully deactivated the Inbound Endpoint [" + getName() + "]");
+        }
     }
 
     public String getFileName() {
@@ -353,4 +390,36 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
 
         this.handlers.add(handler);
     }
+
+    private void setInboundEndpointStateInRegistry(InboundEndpointState state) {
+        registry.newNonEmptyResource(REG_INBOUND_ENDPOINT_BASE_PATH + getName(), false, "text/plain",
+                state.toString(), INBOUND_ENDPOINT_STATE);
+    }
+
+    protected boolean shouldInboundEndpointStartAsDeactivated() {
+
+        if (getInboundEndpointStateFromRegistry() == InboundEndpointState.INITIAL) {
+            return isSuspend();
+        }
+        return (getInboundEndpointStateFromRegistry() == InboundEndpointState.INACTIVE);
+    }
+
+    private InboundEndpointState getInboundEndpointStateFromRegistry() {
+        Properties resourceProperties = registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
+
+        if (resourceProperties == null) {
+            return InboundEndpointState.INITIAL;
+        }
+
+        String state = resourceProperties.getProperty(INBOUND_ENDPOINT_STATE);
+        if (InboundEndpointState.ACTIVE.toString().equalsIgnoreCase(state)) {
+            return InboundEndpointState.ACTIVE;
+        }
+        return InboundEndpointState.INACTIVE;
+    }
+
+    private enum InboundEndpointState {
+        INITIAL, ACTIVE, INACTIVE
+    }
+
 }

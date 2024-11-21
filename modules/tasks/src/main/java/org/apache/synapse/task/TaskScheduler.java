@@ -174,6 +174,26 @@ public class TaskScheduler {
             taskManager.delete(name + "::" + group);
         }
     }
+
+    public boolean resumeTask(String name) {
+        synchronized (lock) {
+            if (!initialized) {
+                logger.error("Could not resume the task[" + name + "]. Task scheduler not properly initialized.");
+                return false;
+            }
+            return taskManager.resume(name);
+        }
+    }
+
+    public boolean pauseTask(String name) {
+        synchronized (lock) {
+            if (!initialized) {
+                logger.error("Could not pause the task[" + name + "]. Task scheduler not properly initialized.");
+                return false;
+            }
+            return taskManager.pause(name);
+        }
+    }
     
     public int getRunningTaskCount() {
         synchronized (lock) {
@@ -192,6 +212,26 @@ public class TaskScheduler {
                 return false;
             }
             return taskManager.isTaskRunning(taskKey);
+        }
+    }
+
+    public boolean isTaskDeactivated(String name) {
+        synchronized (lock) {
+            if (!initialized) {
+                logger.error("Could not determine task status. Task scheduler not properly initialized.");
+                return false;
+            }
+            return taskManager.isTaskDeactivated(name);
+        }
+    }
+
+    public boolean isTaskBlocked(String name) {
+        synchronized (lock) {
+            if (!initialized) {
+                logger.error("Could not determine task status. Task scheduler not properly initialized.");
+                return false;
+            }
+            return taskManager.isTaskBlocked(name);
         }
     }
 
