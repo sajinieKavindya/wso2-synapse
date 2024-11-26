@@ -124,7 +124,30 @@ public class StartUpController extends AbstractStartup {
         }
     }
 
-    public void init(SynapseEnvironment synapseEnvironment) {
+//    public boolean isTaskDeactivated() {
+//        if (!synapseTaskManager.isInitialized()) {
+//            return false;
+//        }
+//        TaskScheduler taskScheduler = synapseTaskManager.getTaskScheduler();
+//        if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
+//            return false;
+//        }
+//        return !(taskScheduler.isTaskAlreadyRunning(taskDescription.getName())
+//                || taskScheduler.isTaskBlocked(taskDescription.getName()));
+//    }
+
+    public boolean isTaskActive() {
+        if (!synapseTaskManager.isInitialized()) {
+            return false;
+        }
+        TaskScheduler taskScheduler = synapseTaskManager.getTaskScheduler();
+        if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
+            return false;
+        }
+        return !taskScheduler.isTaskDeactivated(taskDescription.getName());
+    }
+
+    public void init(SynapseEnvironment synapseEnvironment, boolean scheduleTask) {
         this.synapseEnvironment = synapseEnvironment;
         if (taskDescription == null) {
             handleException("Error while initializing the startup. TaskDescription is null.");
@@ -159,13 +182,22 @@ public class StartUpController extends AbstractStartup {
             taskManager.setProperties(map);
             taskScheduler.init(synapseEnvironment.getSynapseConfiguration().getProperties(),
                     taskManager);
-            submitTask(taskScheduler, taskDescription);
-            logger.debug("Submitted task [" + taskDescription.getName() + "] to Synapse task scheduler.");
+            if (scheduleTask) {
+                submitTask(taskScheduler, taskDescription);
+                logger.debug("Submitted task [" + taskDescription.getName() + "] to Synapse task scheduler.");
+            } else {
+                logger.debug("Task [" + taskDescription.getName() + "] was not submitted to Synapse task scheduler.");
+            }
+
         } catch (Exception e) {
             String msg = "Error starting up Scheduler : " + e.getLocalizedMessage();
             logger.fatal(msg, e);
             throw new SynapseException(msg, e);
         }
+    }
+
+    public void init(SynapseEnvironment synapseEnvironment) {
+        this.init(synapseEnvironment, true);
     }
 
     private void initializeTask(SynapseEnvironment synapseEnvironment) {

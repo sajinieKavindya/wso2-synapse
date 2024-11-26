@@ -27,4 +27,6 @@ public interface InboundRequestProcessor {
     public boolean activate();
 
     public boolean deactivate();
+
+    public boolean isDeactivated();
 }

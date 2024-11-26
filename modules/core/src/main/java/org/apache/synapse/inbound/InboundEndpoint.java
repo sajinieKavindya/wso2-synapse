@@ -83,19 +83,15 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         synapseEnvironment = se;
         registry = se.getSynapseConfiguration().getRegistry();
         isSuspend = shouldInboundEndpointStartAsDeactivated();
-//        if(isSuspend){
-//      	  log.info("Inbound endpoint " + name + " is currently suspended.");
-//      	  return;
-//        }
-        initializeInboundRequestProcessor();
-
-    }
-
-    private void initializeInboundRequestProcessor() {
         inboundRequestProcessor = getInboundRequestProcessor();
         if (inboundRequestProcessor != null) {
             try {
                 inboundRequestProcessor.init();
+//                if (isSuspend) {
+//                    deactivate();
+//                } else {
+//                    log.info("Inbound endpoint " + name + " is currently suspended.");
+//                }
             } catch (Exception e) {
                 String msg = "Error initializing inbound endpoint " + getName();
                 log.error(msg);
@@ -107,6 +103,11 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
             log.error(msg);
             throw new SynapseException(msg);
         }
+
+    }
+
+    private void initializeInboundRequestProcessor() {
+
     }
 
     /**
@@ -246,27 +247,31 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     }
 
     public synchronized void activate() {
-        if (!isSuspend()) {
-            log.info("Inbound Endpoint [" + getName() + "] is already activated");
-            return;
-        }
+//        if (!isSuspend()) {
+//            log.info("Inbound Endpoint [" + getName() + "] is already activated");
+//            return;
+//        }
         if (this.inboundRequestProcessor.activate()) {
             setSuspend(false);
             setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
-            log.info("Successfully activated the Inbound Endpoint [" + getName() + "]");
+            log.info("Inbound Endpoint [" + getName() + "] is activated.");
         }
     }
 
     public synchronized void deactivate() {
-        if (isSuspend()) {
-            log.info("Inbound Endpoint [" + getName() + "] is already deactivated");
-            return;
-        }
+//        if (isSuspend()) {
+//            log.info("Inbound Endpoint [" + getName() + "] is already deactivated");
+//            return;
+//        }
         if (this.inboundRequestProcessor.deactivate()) {
             setSuspend(true);
             setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
-            log.info("Successfully deactivated the Inbound Endpoint [" + getName() + "]");
+            log.info("Inbound Endpoint [" + getName() + "] is deactivated.");
         }
+    }
+
+    public boolean isDeactivated() {
+        return inboundRequestProcessor.isDeactivated();
     }
 
     public String getFileName() {
@@ -420,6 +425,16 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
 
     private enum InboundEndpointState {
         INITIAL, ACTIVE, INACTIVE
+    }
+
+    public void resumeRemotely() {
+        setSuspend(false);
+        setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+    }
+
+    public void pauseRemotely() {
+        setSuspend(true);
+        setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
     }
 
 }
