@@ -60,7 +60,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private boolean isSuspend;
     private String injectingSeq;
     private String onErrorSeq;
-    private boolean active;
+    private boolean preserveState = true;
     private Map<String, String> parametersMap = new LinkedHashMap<String, String>();
     private Map<String, String> parameterKeyMap = new LinkedHashMap<String, String>();
     private List<MessagingHandler> handlers = new ArrayList();
@@ -82,16 +82,13 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         log.info("Initializing Inbound Endpoint: " + getName());
         synapseEnvironment = se;
         registry = se.getSynapseConfiguration().getRegistry();
-        isSuspend = shouldInboundEndpointStartAsDeactivated();
         inboundRequestProcessor = getInboundRequestProcessor();
         if (inboundRequestProcessor != null) {
             try {
                 inboundRequestProcessor.init();
-//                if (isSuspend) {
-//                    deactivate();
-//                } else {
-//                    log.info("Inbound endpoint " + name + " is currently suspended.");
-//                }
+                if (startInPausedMode()) {
+                    deactivate();
+                }
             } catch (Exception e) {
                 String msg = "Error initializing inbound endpoint " + getName();
                 log.error(msg);
@@ -103,10 +100,6 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
             log.error(msg);
             throw new SynapseException(msg);
         }
-
-    }
-
-    private void initializeInboundRequestProcessor() {
 
     }
 
@@ -159,6 +152,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         //replacing values by secure vault
         resolveVaultExpressions(props);
         resolveSystemSecureVaultProperties(props);
+        setPreserveState(props);
         inboundProcessorParams.setProperties(props);
 
         for (MessagingHandler handler: handlers) {
@@ -178,6 +172,21 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     }
 
     /**
+     * Sets the preserveState flag based on the properties provided.
+     *
+     * This method checks if the property {@code INBOUND_ENDPOINT_PRESERVE_STATE} is set in the provided
+     * {@link Properties} object. If the property is present, it parses its value as a boolean and assigns
+     * it to the {@code preserveState} variable.
+     *
+     * @param props the {@link Properties} object containing the inbound endpoint configuration.
+     */
+    private void setPreserveState(Properties props) {
+        if (props.getProperty(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE) != null) {
+            preserveState = Boolean.parseBoolean(props.getProperty(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE));
+        }
+    }
+
+    /**
      * Remove inbound endpoints.
      * <p>
      * This was introduced as a fix for product-ei#1206.
@@ -192,6 +201,9 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
                     ((InboundTaskProcessor) inboundRequestProcessor).destroy(removeTask);
                 } else {
                     inboundRequestProcessor.destroy();
+                }
+                if (!preserveState) {
+                    deleteInboundEndpointStateInRegistry();
                 }
             } catch (Exception e) {
                 log.error("Unable to destroy Inbound endpoint", e);
@@ -246,30 +258,53 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         this.onErrorSeq = onErrorSeq;
     }
 
-    public synchronized void activate() {
-//        if (!isSuspend()) {
-//            log.info("Inbound Endpoint [" + getName() + "] is already activated");
-//            return;
-//        }
+    /**
+     * Activates the inbound endpoint.
+     * <p>
+     * This method synchronizes access to ensure thread safety while activating the inbound endpoint.
+     * It calls the underlying {@link InboundRequestProcessor} to perform the activation logic.
+     * If the activation is successful, updates the inbound endpoint's state in the registry
+     * to {@link InboundEndpointState#ACTIVE}
+     * </p>
+     */
+    public synchronized boolean activate() {
+
         if (this.inboundRequestProcessor.activate()) {
-            setSuspend(false);
+            log.info("Inbound Endpoint [" + getName() + "] is successfully activated.");
             setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
-            log.info("Inbound Endpoint [" + getName() + "] is activated.");
+            return true;
         }
+        return false;
     }
 
-    public synchronized void deactivate() {
-//        if (isSuspend()) {
-//            log.info("Inbound Endpoint [" + getName() + "] is already deactivated");
-//            return;
-//        }
+    /**
+     * Deactivates the inbound endpoint.
+     * <p>
+     * This method synchronizes access to ensure thread safety while deactivating the inbound endpoint.
+     * It calls the underlying {@link InboundRequestProcessor} to perform the deactivation logic.
+     * If the deactivation is successful, the method updates the inbound endpoint's state in the
+     * registry to {@link InboundEndpointState#INACTIVE}.
+     * </p>
+     */
+    public synchronized boolean deactivate() {
+
         if (this.inboundRequestProcessor.deactivate()) {
-            setSuspend(true);
+            log.info("Inbound Endpoint [" + getName() + "] is successfully deactivated.");
             setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
-            log.info("Inbound Endpoint [" + getName() + "] is deactivated.");
+            return true;
         }
+        return false;
     }
 
+    /**
+     * Checks whether the inbound endpoint is deactivated.
+     * <p>
+     * This method delegates the check to the underlying {@link InboundRequestProcessor},
+     * which determines the deactivation state of the inbound endpoint.
+     * </p>
+     *
+     * @return {@code true} if the inbound endpoint is deactivated; {@code false} otherwise.
+     */
     public boolean isDeactivated() {
         return inboundRequestProcessor.isDeactivated();
     }
@@ -401,14 +436,49 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
                 state.toString(), INBOUND_ENDPOINT_STATE);
     }
 
-    protected boolean shouldInboundEndpointStartAsDeactivated() {
+    private void deleteInboundEndpointStateInRegistry() {
+        if (registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName()) != null) {
+            registry.delete(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
+        }
+    }
 
+    /**
+     * Determines whether the inbound endpoint should start in paused mode.
+     *
+     * This method evaluates the `preserveState` flag and the current state of the inbound endpoint
+     * to decide if the endpoint should start in a paused state.
+     *
+     * - If `preserveState` is false or if the current state in the registry is {@link InboundEndpointState#INITIAL},
+     *   it returns the value of `suspend` attribute in the inbound endpoint configuration`.
+     * - Otherwise, it checks if the current state is {@link InboundEndpointState#INACTIVE}
+     *   and returns `true` if it is, indicating the endpoint should start in paused mode.
+     *
+     * @return {@code true} if the inbound endpoint should start in paused mode, {@code false} otherwise.
+     */
+    protected boolean startInPausedMode() {
+
+        if (!preserveState) {
+            return isSuspend();
+        }
         if (getInboundEndpointStateFromRegistry() == InboundEndpointState.INITIAL) {
             return isSuspend();
         }
         return (getInboundEndpointStateFromRegistry() == InboundEndpointState.INACTIVE);
     }
 
+    /**
+     * Retrieves the current state of the inbound endpoint from the registry.
+     *
+     * This method checks the registry for the state of the inbound endpoint associated with
+     * the provided name. It first fetches the resource properties of the inbound endpoint from
+     * the registry. If no properties are found, the method assumes the state is {@link InboundEndpointState#INITIAL}.
+     *
+     * If the state is present, it determines whether the state is {@link InboundEndpointState#ACTIVE}.
+     * or {@link InboundEndpointState#INACTIVE}.
+     *
+     * @return The current state of the inbound endpoint, as either {@link InboundEndpointState#ACTIVE},
+     * {@link InboundEndpointState#INACTIVE}, or {@link InboundEndpointState#INITIAL} if not explicitly set.
+     */
     private InboundEndpointState getInboundEndpointStateFromRegistry() {
         Properties resourceProperties = registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
 
@@ -427,14 +497,34 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         INITIAL, ACTIVE, INACTIVE
     }
 
-    public void resumeRemotely() {
-        setSuspend(false);
-        setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+    /**
+     * Updates the state of the inbound endpoint to either paused or active based on the given parameter.
+     * <p>
+     * This method attempts to change the state of the inbound endpoint and ensures that the state in
+     * the registry matches the expected behavior. If the operation fails to align the actual state
+     * with the requested state, a warning is logged to indicate the potential for inconsistent behavior.
+     *
+     * @param pause {@code true} to pause the inbound endpoint, setting its state to {@code INACTIVE};
+     *              {@code false} to resume the inbound endpoint, setting its state to {@code ACTIVE}.
+     */
+    public void updateInboundEndpointState(boolean pause) {
+        if (pause && inboundRequestProcessor.isDeactivated()) {
+            setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
+        } else if (!pause && !inboundRequestProcessor.isDeactivated()){
+            setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+        } else {
+            log.warn("The inbound endpoint [" + name + "] was requested to change its state to "
+                    + (pause ? "pause" : "resume") + ", but the operation did not complete successfully "
+                    + "as the actual state does not match the expected state.");
+        }
     }
-
-    public void pauseRemotely() {
-        setSuspend(true);
-        setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
-    }
+//
+//    public void updateInboundEndpointStateInRegistry(boolean isSuspend) {
+//        if (isSuspend) {
+//            setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
+//        } else {
+//            setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+//        }
+//    }
 
 }

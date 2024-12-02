@@ -33,6 +33,7 @@ import org.apache.synapse.task.TaskConstants;
 import org.apache.synapse.task.TaskDescription;
 import org.apache.synapse.task.TaskDescriptionRepository;
 import org.apache.synapse.task.TaskManager;
+import org.apache.synapse.task.TaskManagerObserver;
 import org.apache.synapse.task.TaskScheduler;
 
 import javax.xml.namespace.QName;
@@ -99,12 +100,7 @@ public class StartUpController extends AbstractStartup {
         if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
             return false;
         }
-        if (taskScheduler.isTaskDeactivated(taskDescription.getName())) {
-            logger.info("The task [" + taskDescription.getName() + "] is already deactivated");
-            return true;
-        } else {
-            return taskScheduler.pauseTask(taskDescription.getName());
-        }
+        return taskScheduler.pauseTask(taskDescription.getName());
     }
 
     public boolean activateTask() {
@@ -115,26 +111,8 @@ public class StartUpController extends AbstractStartup {
         if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
             return false;
         }
-        if (taskScheduler.isTaskAlreadyRunning(taskDescription.getName())
-                || taskScheduler.isTaskBlocked(taskDescription.getName())) {
-            logger.info("The task [" + taskDescription.getName() + "] is already active");
-            return true;
-        } else {
-            return taskScheduler.resumeTask(taskDescription.getName());
-        }
+        return taskScheduler.resumeTask(taskDescription.getName());
     }
-
-//    public boolean isTaskDeactivated() {
-//        if (!synapseTaskManager.isInitialized()) {
-//            return false;
-//        }
-//        TaskScheduler taskScheduler = synapseTaskManager.getTaskScheduler();
-//        if (taskScheduler == null || !taskScheduler.isTaskSchedulerInitialized()) {
-//            return false;
-//        }
-//        return !(taskScheduler.isTaskAlreadyRunning(taskDescription.getName())
-//                || taskScheduler.isTaskBlocked(taskDescription.getName()));
-//    }
 
     public boolean isTaskActive() {
         if (!synapseTaskManager.isInitialized()) {
@@ -147,7 +125,7 @@ public class StartUpController extends AbstractStartup {
         return !taskScheduler.isTaskDeactivated(taskDescription.getName());
     }
 
-    public void init(SynapseEnvironment synapseEnvironment, boolean scheduleTask) {
+    public void init(SynapseEnvironment synapseEnvironment) {
         this.synapseEnvironment = synapseEnvironment;
         if (taskDescription == null) {
             handleException("Error while initializing the startup. TaskDescription is null.");
@@ -182,22 +160,14 @@ public class StartUpController extends AbstractStartup {
             taskManager.setProperties(map);
             taskScheduler.init(synapseEnvironment.getSynapseConfiguration().getProperties(),
                     taskManager);
-            if (scheduleTask) {
-                submitTask(taskScheduler, taskDescription);
-                logger.debug("Submitted task [" + taskDescription.getName() + "] to Synapse task scheduler.");
-            } else {
-                logger.debug("Task [" + taskDescription.getName() + "] was not submitted to Synapse task scheduler.");
-            }
+            submitTask(taskScheduler, taskDescription);
+            logger.debug("Submitted task [" + taskDescription.getName() + "] to Synapse task scheduler.");
 
         } catch (Exception e) {
             String msg = "Error starting up Scheduler : " + e.getLocalizedMessage();
             logger.fatal(msg, e);
             throw new SynapseException(msg, e);
         }
-    }
-
-    public void init(SynapseEnvironment synapseEnvironment) {
-        this.init(synapseEnvironment, true);
     }
 
     private void initializeTask(SynapseEnvironment synapseEnvironment) {
