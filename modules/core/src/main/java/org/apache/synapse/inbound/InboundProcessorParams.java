@@ -35,16 +35,16 @@ public class InboundProcessorParams {
     private String onErrorSeq;
     private SynapseEnvironment synapseEnvironment;
     private List<MessagingHandler> handlers;
-    private boolean isSuspend;
+    private boolean startInPausedMode;
 
-    public boolean isSuspend() {
+    public boolean startInPausedMode() {
 
-        return isSuspend;
+        return startInPausedMode;
     }
 
-    public void setSuspend(boolean suspend) {
+    public void setStartInPausedMode(boolean startInPausedMode) {
 
-        isSuspend = suspend;
+        this.startInPausedMode = startInPausedMode;
     }
 
     /**

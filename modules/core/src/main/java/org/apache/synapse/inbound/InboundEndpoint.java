@@ -42,6 +42,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.ServiceLoader;
 import java.util.regex.Matcher;
@@ -60,7 +61,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private boolean isSuspend;
     private String injectingSeq;
     private String onErrorSeq;
-    private boolean preserveState = true;
+    private boolean startInPausedMode;
     private Map<String, String> parametersMap = new LinkedHashMap<String, String>();
     private Map<String, String> parameterKeyMap = new LinkedHashMap<String, String>();
     private List<MessagingHandler> handlers = new ArrayList();
@@ -68,6 +69,11 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private SynapseEnvironment synapseEnvironment;
     private InboundRequestProcessor inboundRequestProcessor;
     private Registry registry;
+    /**
+     * This property determines whether the inbound endpoint should preserve its state
+     * across server restarts or configuration updates.
+     * */
+    private boolean preserveState = true;
     /** car file name which this endpoint deployed from */
     private String artifactContainerName;
     /** Whether the deployed inbound endpoint is edited via the management console */
@@ -82,10 +88,14 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         log.info("Initializing Inbound Endpoint: " + getName());
         synapseEnvironment = se;
         registry = se.getSynapseConfiguration().getRegistry();
+        setPreserveState();
+        startInPausedMode = startInPausedMode();
         inboundRequestProcessor = getInboundRequestProcessor();
         if (inboundRequestProcessor != null) {
             try {
                 inboundRequestProcessor.init();
+
+                // If the Inbound Endpoint should be deactivated on start, then we deactivate the task immediately.
                 if (startInPausedMode()) {
                     deactivate();
                 }
@@ -146,13 +156,12 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         inboundProcessorParams.setInjectingSeq(injectingSeq);
         inboundProcessorParams.setOnErrorSeq(onErrorSeq);
         inboundProcessorParams.setSynapseEnvironment(synapseEnvironment);
-        inboundProcessorParams.setSuspend(isSuspend);
+        inboundProcessorParams.setStartInPausedMode(startInPausedMode);
 
         Properties props = Utils.paramsToProperties(parametersMap);
         //replacing values by secure vault
         resolveVaultExpressions(props);
         resolveSystemSecureVaultProperties(props);
-        setPreserveState(props);
         inboundProcessorParams.setProperties(props);
 
         for (MessagingHandler handler: handlers) {
@@ -172,17 +181,17 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     }
 
     /**
-     * Sets the preserveState flag based on the properties provided.
+     * Configures the `preserveState` property for the inbound endpoint.
+     * <p>
+     * This method checks if the parameter {@code INBOUND_ENDPOINT_PRESERVE_STATE} is defined.
+     * If the parameter exists, its value is parsed as a boolean and assigned to the `preserveState` variable.
+     * </p>
      *
-     * This method checks if the property {@code INBOUND_ENDPOINT_PRESERVE_STATE} is set in the provided
-     * {@link Properties} object. If the property is present, it parses its value as a boolean and assigns
-     * it to the {@code preserveState} variable.
-     *
-     * @param props the {@link Properties} object containing the inbound endpoint configuration.
+     * @see InboundEndpointConstants#INBOUND_ENDPOINT_PRESERVE_STATE
      */
-    private void setPreserveState(Properties props) {
-        if (props.getProperty(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE) != null) {
-            preserveState = Boolean.parseBoolean(props.getProperty(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE));
+    private void setPreserveState() {
+        if (getParameter(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE) != null) {
+            preserveState = Boolean.parseBoolean(getParameter(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE));
         }
     }
 
@@ -269,10 +278,18 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      */
     public synchronized boolean activate() {
 
-        if (this.inboundRequestProcessor.activate()) {
-            log.info("Inbound Endpoint [" + getName() + "] is successfully activated.");
-            setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
-            return true;
+        log.info("Activating the Inbound Endpoint: " + getName());
+        String errorMessage = "Failed to activate the Inbound Endpoint: " + getName();
+        try {
+            if (this.inboundRequestProcessor.activate()) {
+                log.info("Inbound Endpoint [" + getName() + "] is successfully activated.");
+                setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
+                return true;
+            } else {
+                log.error(errorMessage);
+            }
+        } catch (Exception e) {
+            log.error(errorMessage, e);
         }
         return false;
     }
@@ -288,10 +305,18 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      */
     public synchronized boolean deactivate() {
 
-        if (this.inboundRequestProcessor.deactivate()) {
-            log.info("Inbound Endpoint [" + getName() + "] is successfully deactivated.");
-            setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
-            return true;
+        log.info("Deactivating the Inbound Endpoint: " + getName());
+        String errorMessage = "Failed to deactivate the Inbound Endpoint: " + getName();
+        try {
+            if (this.inboundRequestProcessor.deactivate()) {
+                log.info("Inbound Endpoint [" + getName() + "] is successfully deactivated.");
+                setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
+                return true;
+            } else {
+                log.error(errorMessage);
+            }
+        } catch (Exception e) {
+            log.error(errorMessage, e);
         }
         return false;
     }
@@ -431,12 +456,35 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         this.handlers.add(handler);
     }
 
+    /**
+     * Updates the state of the Inbound Endpoint in the registry.
+     *
+     * <p>This method ensures that the state of the Inbound Endpoint is persisted in
+     * the registry for future reference. If the registry is unavailable and state
+     * preservation is enabled, a warning is logged, and the state will not be updated.
+     *
+     * @param state the {@link InboundEndpointState} to be saved in the registry
+     */
     private void setInboundEndpointStateInRegistry(InboundEndpointState state) {
+        if (Objects.isNull(registry) && preserveState) {
+            log.warn("Registry not available! The state of the Inbound Endpoint will not be saved.");
+            return;
+        }
         registry.newNonEmptyResource(REG_INBOUND_ENDPOINT_BASE_PATH + getName(), false, "text/plain",
                 state.toString(), INBOUND_ENDPOINT_STATE);
     }
 
+    /**
+     * Deletes the state of the Inbound Endpoint from the registry.
+     *
+     * <p>This method removes the registry entry corresponding to the current
+     * Inbound Endpoint's state, if it exists. If the registry is unavailable,
+     * the operation is skipped.
+     */
     private void deleteInboundEndpointStateInRegistry() {
+        if (Objects.isNull(registry)) {
+            return;
+        }
         if (registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName()) != null) {
             registry.delete(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
         }
@@ -455,7 +503,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      *
      * @return {@code true} if the inbound endpoint should start in paused mode, {@code false} otherwise.
      */
-    protected boolean startInPausedMode() {
+    private boolean startInPausedMode() {
 
         if (!preserveState) {
             return isSuspend();
@@ -518,13 +566,5 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
                     + "as the actual state does not match the expected state.");
         }
     }
-//
-//    public void updateInboundEndpointStateInRegistry(boolean isSuspend) {
-//        if (isSuspend) {
-//            setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
-//        } else {
-//            setInboundEndpointStateInRegistry(InboundEndpointState.ACTIVE);
-//        }
-//    }
 
 }

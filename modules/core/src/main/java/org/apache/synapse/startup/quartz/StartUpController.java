@@ -92,6 +92,14 @@ public class StartUpController extends AbstractStartup {
         destroy(true);
     }
 
+    /**
+     * Deactivates the associated task by pausing its execution.
+     *
+     * @return {@code true} if the task was successfully paused; {@code false} otherwise.
+     *         Possible reasons for returning {@code false} include:
+     *         - The Synapse Task Manager is not initialized.
+     *         - The Task Scheduler is null or not properly initialized.
+     */
     public boolean deactivateTask() {
         if (!synapseTaskManager.isInitialized()) {
             return false;
@@ -103,6 +111,14 @@ public class StartUpController extends AbstractStartup {
         return taskScheduler.pauseTask(taskDescription.getName());
     }
 
+    /**
+     * Activates the associated task by resuming its execution.
+     *
+     * @return {@code true} if the task was successfully resumed; {@code false} otherwise.
+     *         Possible reasons for returning {@code false} include:
+     *         - The Synapse Task Manager is not initialized.
+     *         - The Task Scheduler is null or not properly initialized.
+     */
     public boolean activateTask() {
         if (!synapseTaskManager.isInitialized()) {
             return false;
@@ -114,6 +130,15 @@ public class StartUpController extends AbstractStartup {
         return taskScheduler.resumeTask(taskDescription.getName());
     }
 
+    /**
+     * Checks if the associated task is currently active.
+     *
+     * @return {@code true} if the task is active (i.e., not deactivated); {@code false} otherwise.
+     *         Possible reasons for returning {@code false} include:
+     *         - The Synapse Task Manager is not initialized.
+     *         - The Task Scheduler is null or not properly initialized.
+     *         - The task is explicitly marked as deactivated.
+     */
     public boolean isTaskActive() {
         if (!synapseTaskManager.isInitialized()) {
             return false;

@@ -175,20 +175,34 @@ public class TaskScheduler {
         }
     }
 
+    /**
+     * Resumes a specified task.
+     *
+     * @param name The name of the task to resume.
+     * @return {@code true} if the task was successfully resumed; {@code false} if the task
+     *         scheduler is not initialized or if the task resumption fails.
+     */
     public boolean resumeTask(String name) {
         synchronized (lock) {
             if (!initialized) {
-                logger.error("Could not resume the task[" + name + "]. Task scheduler not properly initialized.");
+                logger.error("Could not resume the task [" + name + "]. Task scheduler not properly initialized.");
                 return false;
             }
             return taskManager.resume(name);
         }
     }
 
+    /**
+     * Pauses a specified task.
+     *
+     * @param name The name of the task to resume.
+     * @return {@code true} if the task was successfully paused; {@code false} if the task
+     *         scheduler is not initialized or if the task could not be paused.
+     */
     public boolean pauseTask(String name) {
         synchronized (lock) {
             if (!initialized) {
-                logger.error("Could not pause the task[" + name + "]. Task scheduler not properly initialized.");
+                logger.error("Could not pause the task [" + name + "]. Task scheduler not properly initialized.");
                 return false;
             }
             return taskManager.pause(name);
@@ -215,6 +229,12 @@ public class TaskScheduler {
         }
     }
 
+    /**
+     * Checks if a task with the specified name is deactivated.
+     *
+     * @param name the name of the task to check.
+     * @return {@code true} if the task is deactivated, {@code false} otherwise or if the scheduler is not initialized.
+     */
     public boolean isTaskDeactivated(String name) {
         synchronized (lock) {
             if (!initialized) {
@@ -225,15 +245,15 @@ public class TaskScheduler {
         }
     }
 
-    public boolean isTaskBlocked(String name) {
-        synchronized (lock) {
-            if (!initialized) {
-                logger.error("Could not determine task status. Task scheduler not properly initialized.");
-                return false;
-            }
-            return taskManager.isTaskBlocked(name);
-        }
-    }
+//    public boolean isTaskBlocked(String name) {
+//        synchronized (lock) {
+//            if (!initialized) {
+//                logger.error("Could not determine task status. Task scheduler not properly initialized.");
+//                return false;
+//            }
+//            return taskManager.isTaskBlocked(name);
+//        }
+//    }
 
     public void setTriggerFactory(Object triggerFactory) {
         synchronized (lock) {
