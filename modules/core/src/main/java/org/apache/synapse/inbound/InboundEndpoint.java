@@ -73,7 +73,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      * This property determines whether the inbound endpoint should preserve its state
      * across server restarts or configuration updates.
      * */
-    private boolean preserveState = true;
+    private boolean preserveState = false;
     /** car file name which this endpoint deployed from */
     private String artifactContainerName;
     /** Whether the deployed inbound endpoint is edited via the management console */
@@ -94,7 +94,6 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
         if (inboundRequestProcessor != null) {
             try {
                 inboundRequestProcessor.init();
-
             } catch (Exception e) {
                 String msg = "Error initializing inbound endpoint " + getName();
                 log.error(msg);
@@ -188,6 +187,9 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private void setPreserveState() {
         if (getParameter(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE) != null) {
             preserveState = Boolean.parseBoolean(getParameter(InboundEndpointConstants.INBOUND_ENDPOINT_PRESERVE_STATE));
+        }
+        if (!preserveState) {
+            deleteInboundEndpointStateInRegistry();
         }
     }
 
@@ -516,7 +518,6 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private boolean startInPausedMode() {
 
         if (!preserveState) {
-            deleteInboundEndpointStateInRegistry();
             return isSuspend();
         }
         if (getInboundEndpointStateFromRegistry() == InboundEndpointState.INITIAL) {

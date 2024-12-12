@@ -33,7 +33,6 @@ import org.apache.synapse.task.TaskConstants;
 import org.apache.synapse.task.TaskDescription;
 import org.apache.synapse.task.TaskDescriptionRepository;
 import org.apache.synapse.task.TaskManager;
-import org.apache.synapse.task.TaskManagerObserver;
 import org.apache.synapse.task.TaskScheduler;
 
 import javax.xml.namespace.QName;
@@ -187,7 +186,6 @@ public class StartUpController extends AbstractStartup {
                     taskManager);
             submitTask(taskScheduler, taskDescription);
             logger.debug("Submitted task [" + taskDescription.getName() + "] to Synapse task scheduler.");
-
         } catch (Exception e) {
             String msg = "Error starting up Scheduler : " + e.getLocalizedMessage();
             logger.fatal(msg, e);

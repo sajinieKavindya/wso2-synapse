@@ -245,16 +245,6 @@ public class TaskScheduler {
         }
     }
 
-//    public boolean isTaskBlocked(String name) {
-//        synchronized (lock) {
-//            if (!initialized) {
-//                logger.error("Could not determine task status. Task scheduler not properly initialized.");
-//                return false;
-//            }
-//            return taskManager.isTaskBlocked(name);
-//        }
-//    }
-
     public void setTriggerFactory(Object triggerFactory) {
         synchronized (lock) {
             if (!initialized) {
