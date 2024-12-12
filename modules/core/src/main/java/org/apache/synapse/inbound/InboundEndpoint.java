@@ -95,10 +95,6 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
             try {
                 inboundRequestProcessor.init();
 
-                // If the Inbound Endpoint should be deactivated on start, then we deactivate the task immediately.
-                if (startInPausedMode()) {
-                    deactivate();
-                }
             } catch (Exception e) {
                 String msg = "Error initializing inbound endpoint " + getName();
                 log.error(msg);
@@ -278,6 +274,11 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      */
     public synchronized boolean activate() {
 
+        if (Objects.isNull(this.inboundRequestProcessor)) {
+            log.error("Unable to activate the Inbound Endpoint [" + getName() + "] because "
+                    + "no associated inbound request processor was found!");
+        }
+
         log.info("Activating the Inbound Endpoint: " + getName());
         String errorMessage = "Failed to activate the Inbound Endpoint: " + getName();
         try {
@@ -305,6 +306,11 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      */
     public synchronized boolean deactivate() {
 
+        if (Objects.isNull(this.inboundRequestProcessor)) {
+            log.error("Unable to deactivate the Inbound Endpoint [" + getName() + "] because "
+                    + "no associated inbound request processor was found!");
+        }
+
         log.info("Deactivating the Inbound Endpoint: " + getName());
         String errorMessage = "Failed to deactivate the Inbound Endpoint: " + getName();
         try {
@@ -331,6 +337,10 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      * @return {@code true} if the inbound endpoint is deactivated; {@code false} otherwise.
      */
     public boolean isDeactivated() {
+
+        if (Objects.isNull(this.inboundRequestProcessor)) {
+            return true;
+        }
         return inboundRequestProcessor.isDeactivated();
     }
 
@@ -506,6 +516,7 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
     private boolean startInPausedMode() {
 
         if (!preserveState) {
+            deleteInboundEndpointStateInRegistry();
             return isSuspend();
         }
         if (getInboundEndpointStateFromRegistry() == InboundEndpointState.INITIAL) {
@@ -528,7 +539,10 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      * {@link InboundEndpointState#INACTIVE}, or {@link InboundEndpointState#INITIAL} if not explicitly set.
      */
     private InboundEndpointState getInboundEndpointStateFromRegistry() {
-        Properties resourceProperties = registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
+        Properties resourceProperties = null;
+        if (Objects.nonNull(registry)) {
+            resourceProperties = registry.getResourceProperties(REG_INBOUND_ENDPOINT_BASE_PATH + getName());
+        }
 
         if (resourceProperties == null) {
             return InboundEndpointState.INITIAL;
@@ -556,6 +570,10 @@ public class InboundEndpoint implements AspectConfigurable, ManagedLifecycle {
      *              {@code false} to resume the inbound endpoint, setting its state to {@code ACTIVE}.
      */
     public void updateInboundEndpointState(boolean pause) {
+
+        if (Objects.isNull(inboundRequestProcessor)) {
+            log.error("Unable to update the state of the Inbound Endpoint [" + getName() + "] as it does not exist!");
+        }
         if (pause && inboundRequestProcessor.isDeactivated()) {
             setInboundEndpointStateInRegistry(InboundEndpointState.INACTIVE);
         } else if (!pause && !inboundRequestProcessor.isDeactivated()){
