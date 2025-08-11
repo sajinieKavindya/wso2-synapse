@@ -432,15 +432,10 @@ public class VFSTransportListener extends AbstractPollingTransportListener<PollT
                     for (FileObject child : children) {
                         // Stop processing any further when put to maintenance mode (shutting down or restarting)
                         // Stop processing when service get undeployed
-                        if (state != BaseConstants.STARTED || !entry.getService().isActive()) {
-                            return;
-                        }
-                        /**
-                         * Before starting to process another file, see whether the proxy is stopped or not.
-                         */
-                        if (entry.isCanceled()) {
+                        if (state != BaseConstants.STARTED || !entry.getService().isActive() || entry.isCanceled()) {
                             break;
                         }
+
                         //skipping *.lock file
                         if(child.getName().getBaseName().endsWith(".lock")){
                             continue;
@@ -463,106 +458,7 @@ public class VFSTransportListener extends AbstractPollingTransportListener<PollT
                             isFailedRecord = isFailedRecord(child, entry);
                         }
 
-                        if(entry.getMinimumAge() != null){
-                            long age = child.getContent().getLastModifiedTime();
-                            long time = System.currentTimeMillis();
-                            if((time-age)/1000 <= entry.getMinimumAge()){
-                                continue;
-                            }
-                        }
-                        
-                        if(entry.getMaximumAge() != null){
-                            long age = child.getContent().getLastModifiedTime();
-                            long time = System.currentTimeMillis();
-                            if((time-age)/1000 >= entry.getMaximumAge()){
-                                continue;
-                            }
-                        }
-                        
-                        if(entry.getFileNamePattern()!=null &&
-                                child.getName().getBaseName().matches(entry.getFileNamePattern())){
-                            //child's file name matches the file name pattern
-
-                            //check if file is still uploading (only used when checkSizeInterval is set)
-                            if (isFileStillUploading(entry, child)) {
-                                //continiue with next file this one is still uploading
-                                log.debug("Skipped file " + VFSUtils.maskURLPassword(child.getName().getBaseName()) + " is still uploading.");
-                                continue;
-                            }
-
-                            //now we try to get the lock and process
-                            if (log.isDebugEnabled()) {
-                                log.debug("Matching file : " + child.getName().getBaseName());
-                            }
-                            boolean runPostProcess = true;
-                            if((!entry.isFileLockingEnabled()
-                                    || (entry.isFileLockingEnabled()
-                                        && acquireLock(getFsManager(), child, entry, fso, true)))
-                                    && !isFailedRecord){
-                                //process the file
-                                try {
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Processing file :"
-                                        		+ VFSUtils.maskURLPassword(child.toString()));
-                                    }
-                                    processCount++;
-
-                                    if (child.getType() == FileType.FILE) {
-                                        boolean status = processFile(entry, child);
-                                        if (status) {
-                                            successCount++;
-                                            entry.setLastPollState(PollTableEntry.SUCCSESSFUL);
-                                        } else {
-                                            entry.setLastPollState(PollTableEntry.FAILED);
-                                        }
-                                        metrics.incrementMessagesReceived();
-                                    } else {
-                                        runPostProcess = false;
-                                    }
-                                } catch (Exception e) {
-                                    if (e.getCause() instanceof FileNotFoundException) {
-                                        log.warn("Error processing File URI : " +
-                                                 VFSUtils.maskURLPassword(child.getName().toString()) +
-                                                 ". This can be due to file moved from another process.");
-                                        runPostProcess = false;
-                                    } else {
-                                        logException("Error processing File URI : " +
-                                                     VFSUtils.maskURLPassword(child.getName().getURI()), e);
-                                        failCount++;
-                                        // tell moveOrDeleteAfterProcessing() file failed
-                                        entry.setLastPollState(PollTableEntry.FAILED);
-                                        metrics.incrementFaultsReceiving();
-                                    }
-                                }
-                                //skipping un-locking file if failed to do delete/move after process
-                                boolean skipUnlock = false;
-                                if (runPostProcess) {
-                                    try {
-                                        moveOrDeleteAfterProcessing(entry, child, fso);
-                                    } catch (AxisFault axisFault) {
-                                        logException(
-                                                "File object '" + VFSUtils.maskURLPassword(child.getURL().toString()) +
-                                                "'cloud not be moved, will remain in \"locked\" state", axisFault);
-                                        skipUnlock = true;
-                                        failCount++;
-                                        entry.setLastPollState(PollTableEntry.FAILED);
-                                        String timeStamp =
-                                                VFSUtils.getSystemTime(entry.getFailedRecordTimestampFormat());
-                                        addFailedRecord(entry, child, timeStamp);
-                                    }
-                                }
-                                // if there is a failure or not we'll try to release the lock
-                                if (entry.isFileLockingEnabled() && !skipUnlock) {
-                                    VFSUtils.releaseLock(getFsManager(), child, fso);
-                                }
-                            }
-                        }else if(entry.getFileNamePattern()!=null &&
-                                !child.getName().getBaseName().matches(entry.getFileNamePattern())){
-                            //child's file name does not match the file name pattern
-                            if (log.isDebugEnabled()) {
-                                log.debug("Non-Matching file : " + child.getName().getBaseName());
-                            }
-                        } else if(isFailedRecord){
+                        if (isFailedRecord) {
                             //it is a failed record
                             if (entry.isFileLockingEnabled()) {
                                 VFSUtils.releaseLock(getFsManager(), child, fso);
@@ -574,25 +470,129 @@ public class VFSTransportListener extends AbstractPollingTransportListener<PollT
                             }
                             if (log.isDebugEnabled()) {
                                 log.debug("File '"
-                                		+ VFSUtils.maskURLPassword(fileObject.getURL().toString())
-                                		+ "' has been marked as a failed record, it will not "
-                                		+ "process");
+                                        + VFSUtils.maskURLPassword(fileObject.getURL().toString())
+                                        + "' has been marked as a failed record, it will not "
+                                        + "process");
+                            }
+                            close(child);
+                            continue;
+                        }
+
+                        if (entry.getFileNamePattern() == null) {
+                            close(child);
+                            continue;
+                        }
+
+                        if (!child.getName().getBaseName().matches(entry.getFileNamePattern())) {
+                            //child's file name does not match the file name pattern
+                            if (log.isDebugEnabled()) {
+                                log.debug("Non-Matching file : " + child.getName().getBaseName());
+                            }
+                            close(child);
+                            continue;
+                        }
+
+                        //now we try to get the lock and process
+                        if (log.isDebugEnabled()) {
+                            log.debug("Matching file : " + child.getName().getBaseName());
+                        }
+
+                        if(entry.getMinimumAge() != null){
+                            long age = child.getContent().getLastModifiedTime();
+                            long time = System.currentTimeMillis();
+                            if((time-age)/1000 <= entry.getMinimumAge()){
+                                continue;
+                            }
+                        }
+
+                        if(entry.getMaximumAge() != null){
+                            long age = child.getContent().getLastModifiedTime();
+                            long time = System.currentTimeMillis();
+                            if((time-age)/1000 >= entry.getMaximumAge()){
+                                continue;
+                            }
+                        }
+
+                        //check if file is still uploading (only used when checkSizeInterval is set)
+                        if (isFileStillUploading(entry, child)) {
+                            //continiue with next file this one is still uploading
+                            log.debug("Skipped file " + VFSUtils.maskURLPassword(child.getName().getBaseName()) + " is still uploading.");
+                            continue;
+                        }
+
+                        boolean runPostProcess = true;
+                        if ((!entry.isFileLockingEnabled() || (entry.isFileLockingEnabled()
+                                && acquireLock(getFsManager(), child, entry, fso, true)))) {
+                            //process the file
+                            try {
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Processing file :" + VFSUtils.maskURLPassword(child.toString()));
+                                }
+                                processCount++;
+
+                                if (child.getType() == FileType.FILE) {
+                                    boolean status = processFile(entry, child);
+                                    if (status) {
+                                        successCount++;
+                                        entry.setLastPollState(PollTableEntry.SUCCSESSFUL);
+                                    } else {
+                                        entry.setLastPollState(PollTableEntry.FAILED);
+                                    }
+                                    metrics.incrementMessagesReceived();
+                                } else {
+                                    runPostProcess = false;
+                                }
+                            } catch (Exception e) {
+                                if (e.getCause() instanceof FileNotFoundException) {
+                                    log.warn("Error processing File URI : " +
+                                            VFSUtils.maskURLPassword(child.getName().toString()) +
+                                            ". This can be due to file moved from another process.");
+                                    runPostProcess = false;
+                                } else {
+                                    logException("Error processing File URI : " +
+                                            VFSUtils.maskURLPassword(child.getName().getURI()), e);
+                                    failCount++;
+                                    // tell moveOrDeleteAfterProcessing() file failed
+                                    entry.setLastPollState(PollTableEntry.FAILED);
+                                    metrics.incrementFaultsReceiving();
+                                }
+                            }
+                            //skipping un-locking file if failed to do delete/move after process
+                            boolean skipUnlock = false;
+                            if (runPostProcess) {
+                                try {
+                                    moveOrDeleteAfterProcessing(entry, child, fso);
+                                } catch (AxisFault axisFault) {
+                                    logException(
+                                            "File object '" + VFSUtils.maskURLPassword(child.getURL().toString()) +
+                                                    "'cloud not be moved, will remain in \"locked\" state", axisFault);
+                                    skipUnlock = true;
+                                    failCount++;
+                                    entry.setLastPollState(PollTableEntry.FAILED);
+                                    String timeStamp =
+                                            VFSUtils.getSystemTime(entry.getFailedRecordTimestampFormat());
+                                    addFailedRecord(entry, child, timeStamp);
+                                }
+                            }
+                            // if there is a failure or not we'll try to release the lock
+                            if (entry.isFileLockingEnabled() && !skipUnlock) {
+                                VFSUtils.releaseLock(getFsManager(), child, fso);
                             }
                         }
                         close(child);
 
-                        if(iFileProcessingInterval != null && iFileProcessingInterval > 0){
-                        	try{
+                        if (iFileProcessingInterval != null && iFileProcessingInterval > 0) {
+                            try {
                                 if (log.isDebugEnabled()) {
                                     log.debug("Put the VFS processor to sleep for : " + iFileProcessingInterval);
                                 }
-                        		Thread.sleep(iFileProcessingInterval);
-                        	}catch(InterruptedException ie){
+                                Thread.sleep(iFileProcessingInterval);
+                            } catch(InterruptedException ie) {
                                 log.error("Unable to set the interval between file processors." + ie);
                                 Thread.currentThread().interrupt();
-                        	}
-                        }else if(iFileProcessingCount != null && iFileProcessingCount <= processCount){
-                        	break;
+                            }
+                        } else if (iFileProcessingCount != null && iFileProcessingCount <= processCount) {
+                            break;
                         }
                     }
 
